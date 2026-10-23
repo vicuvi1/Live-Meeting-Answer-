@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, Pause, RotateCcw, X, Sparkles, MessageSquare, FastForward } from 'lucide-react';
 
 const getScenarios = (target) => [
@@ -39,6 +39,12 @@ export default function MeetingSimulator({ onInjectTranscript, onClose, targetNa
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [timerId, setTimerId] = useState(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [timerId]);
 
   const injectLine = (line) => {
     onInjectTranscript(line.text, line.speaker, true);

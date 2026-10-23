@@ -117,3 +117,10 @@ async def test_full_copilot_workflow():
         root_res = await client.get("/")
         assert root_res.status_code == 200
         assert "html" in root_res.headers.get("content-type", "")
+
+        # 11. Test resilience: auto-creation on missing session
+        auto_res = await client.post("/api/copilot/quick-answer", json={
+            "session_id": "auto_session_resilience_test",
+            "target_name": "User"
+        })
+        assert auto_res.status_code == 200

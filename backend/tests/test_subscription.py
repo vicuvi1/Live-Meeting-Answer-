@@ -36,3 +36,19 @@ async def test_subscription_flow():
         status_data = status_res.json()
         assert status_data["is_active_pro"] is True
         assert status_data["plan_tier"] == "lifetime_vip"
+
+def test_subscription_days_remaining():
+    from datetime import datetime, timezone, timedelta
+    from app.models.subscription import Subscription
+    
+    sub = Subscription(
+        device_id="test_sub_days",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=5)
+    )
+    assert sub.days_remaining == 1
+
+    sub_expired = Subscription(
+        device_id="test_sub_expired",
+        expires_at=datetime.now(timezone.utc) - timedelta(hours=1)
+    )
+    assert sub_expired.days_remaining == 0

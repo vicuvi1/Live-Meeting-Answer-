@@ -104,7 +104,7 @@ async def summarize_session(session_id: str, db: AsyncSession = Depends(get_db))
     # Save to session
     session.summary = summary_data.get("summary", "")
     session.action_items = "\n".join(summary_data.get("action_items", []))
-    if summary_data.get("title") and session.title.startswith("Ședință Nouă"):
+    if summary_data.get("title") and session.title and (session.title.startswith("Ședință Nouă") or session.title.startswith("Ședință Live")):
         session.title = summary_data["title"]
 
     await db.commit()

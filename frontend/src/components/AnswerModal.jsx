@@ -96,7 +96,7 @@ export default function AnswerModal({ answer, onClose, onFeedback }) {
             <span>ÎNTREBARE ADRESATĂ:</span>
           </div>
           <p className="text-xs sm:text-sm font-medium text-slate-200 italic line-clamp-2">
-            "{answer.question_detected || 'Ai fost întrebată despre desfășurarea activităților.'}"
+            "{answer.question_detected || 'Ai primit o întrebare despre desfășurarea activităților.'}"
           </p>
         </div>
 

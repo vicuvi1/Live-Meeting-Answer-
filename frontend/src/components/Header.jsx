@@ -23,7 +23,18 @@ export default function Header({
         setUpdateAvailable(res);
       }
     }).catch(() => {});
-    return () => { isMounted = false; };
+
+    const handleFsChange = () => {
+      if (isMounted) {
+        setIsFullscreen(Boolean(document.fullscreenElement));
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+
+    return () => { 
+      isMounted = false; 
+      document.removeEventListener('fullscreenchange', handleFsChange);
+    };
   }, []);
 
   const toggleFullscreen = () => {

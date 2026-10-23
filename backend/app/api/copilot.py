@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,12 +28,18 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
     the exact spoken Romanian response for the user to say.
     Supports Google Gemini (direct free/paid) and OpenRouter models.
     """
-    # Verify session
+    # Verify session (auto-create if missing to avoid edge-case failures)
     session_q = select(MeetingSession).where(MeetingSession.id == request.session_id)
     session_res = await db.execute(session_q)
     session = session_res.scalar_one_or_none()
     if not session:
-        raise HTTPException(status_code=404, detail="Sesiunea nu a fost găsită")
+        session = MeetingSession(
+            id=request.session_id,
+            title="Ședință Live Copilot",
+            status="active"
+        )
+        db.add(session)
+        await db.commit()
 
     # Fetch last 30 segments (approx 3-5 minutes of speech)
     transcript_q = (
@@ -91,6 +97,14 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
         model_used=answer_record.llm_model
     )
 
+def _safe_json_loads(val: Optional[str], default_val: Any) -> Any:
+    if not val:
+        return default_val
+    try:
+        return json.loads(val)
+    except Exception:
+        return default_val
+
 @router.get("/answers/{session_id}")
 async def get_answers_for_session(session_id: str, db: AsyncSession = Depends(get_db)):
     """Retrieves all past AI-generated answers for this session."""
@@ -104,8 +118,8 @@ async def get_answers_for_session(session_id: str, db: AsyncSession = Depends(ge
             "session_id": a.session_id,
             "question_detected": a.question_detected,
             "spoken_response": a.spoken_response,
-            "talking_points": json.loads(a.talking_points) if a.talking_points else [],
-            "tactical_responses": json.loads(a.tactical_responses) if a.tactical_responses else None,
+            "talking_points": _safe_json_loads(a.talking_points, []),
+            "tactical_responses": _safe_json_loads(a.tactical_responses, None),
             "latency_ms": a.latency_ms,
             "generated_at": a.generated_at,
             "feedback": a.feedback

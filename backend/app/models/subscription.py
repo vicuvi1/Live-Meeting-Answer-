@@ -36,8 +36,10 @@ class Subscription(Base):
             return True
         if self.status != "active":
             return False
-        if self.expires_at and self.expires_at < utc_now():
-            return False
+        if self.expires_at:
+            exp = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
+            if exp < utc_now():
+                return False
         if self.plan_tier in ["pro_monthly", "pro_yearly", "lifetime_vip", "trial"]:
             return True
         return False
@@ -49,5 +51,10 @@ class Subscription(Base):
         target = self.expires_at or self.trial_ends_at
         if not target:
             return 0
-        diff = (target - utc_now()).days
-        return max(0, diff)
+        if target.tzinfo is not None:
+            target = target.replace(tzinfo=None)
+        diff_seconds = (target - utc_now()).total_seconds()
+        if diff_seconds <= 0:
+            return 0
+        import math
+        return max(1, math.ceil(diff_seconds / 86400.0))

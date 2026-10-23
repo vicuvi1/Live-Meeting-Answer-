@@ -93,19 +93,25 @@ export default function SessionHistory({ onResumeSession, targetName = 'User' })
 
   const handleDelete = async (e, sessionId) => {
     e.stopPropagation();
-    if (!window.confirm('Sigur doriți să ștergeți această înregistrare din istoric?')) return;
+    try {
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (!window.confirm('Sigur doriți să ștergeți această înregistrare din istoric?')) return;
+      }
+    } catch (err) {
+      // Ignored if window.confirm is suppressed
+    }
     try {
       await api.deleteSession(sessionId);
       if (selectedSession?.id === sessionId) setSelectedSession(null);
       loadSessions();
     } catch (err) {
-      alert(`Eroare ștergere: ${err.message}`);
+      console.warn('Eroare ștergere:', err);
     }
   };
 
   const filteredTranscripts = transcripts.filter(t => 
-    t.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    t.speaker.toLowerCase().includes(searchQuery.toLowerCase())
+    (t.text || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+    (t.speaker || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   return (

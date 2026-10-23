@@ -10,6 +10,24 @@ import { api } from './services/api';
 import { WebSocketClient } from './services/websocketClient';
 import { AudioService } from './services/audioCapture';
 
+const safeStorage = {
+  get: (key, fallback = '') => {
+    try {
+      const val = localStorage.getItem(key);
+      return val !== null ? val : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  },
+  set: (key, val) => {
+    try {
+      localStorage.setItem(key, val);
+    } catch (e) {
+      // Ignored if storage is restricted
+    }
+  }
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('copilot'); // 'copilot' | 'history'
   const [session, setSession] = useState(null);
@@ -19,7 +37,7 @@ export default function App() {
   const [isLoadingAnswer, setIsLoadingAnswer] = useState(false);
   const [recentAlert, setRecentAlert] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [fontSizeMode, setFontSizeMode] = useState(localStorage.getItem('copilot_font_size') || 'normal');
+  const [fontSizeMode, setFontSizeMode] = useState(safeStorage.get('copilot_font_size', 'normal'));
   
   // Modals
   const [showSimulator, setShowSimulator] = useState(false);
@@ -29,13 +47,13 @@ export default function App() {
 
   // Settings
   const [settings, setSettings] = useState({
-    targetName: localStorage.getItem('copilot_target_name') || 'User',
-    provider: localStorage.getItem('copilot_provider') || 'gemini',
-    geminiKey: localStorage.getItem('copilot_gemini_key') || '',
-    geminiModel: localStorage.getItem('copilot_gemini_model') || 'gemini-2.5-flash',
-    openrouterKey: localStorage.getItem('copilot_openrouter_key') || '',
-    openrouterModel: localStorage.getItem('copilot_openrouter_model') || 'google/gemini-2.0-flash-exp:free',
-    deepgramKey: localStorage.getItem('copilot_deepgram_key') || ''
+    targetName: safeStorage.get('copilot_target_name', 'User'),
+    provider: safeStorage.get('copilot_provider', 'gemini'),
+    geminiKey: safeStorage.get('copilot_gemini_key', ''),
+    geminiModel: safeStorage.get('copilot_gemini_model', 'gemini-2.5-flash'),
+    openrouterKey: safeStorage.get('copilot_openrouter_key', ''),
+    openrouterModel: safeStorage.get('copilot_openrouter_model', 'google/gemini-2.0-flash-exp:free'),
+    deepgramKey: safeStorage.get('copilot_deepgram_key', '')
   });
 
   const wsClientRef = useRef(null);
@@ -236,20 +254,20 @@ export default function App() {
   // 6. Save Settings
   const handleSaveSettings = (newSettings) => {
     setSettings(newSettings);
-    localStorage.setItem('copilot_target_name', newSettings.targetName);
-    localStorage.setItem('copilot_provider', newSettings.provider);
-    localStorage.setItem('copilot_gemini_key', newSettings.geminiKey);
-    localStorage.setItem('copilot_gemini_model', newSettings.geminiModel);
-    localStorage.setItem('copilot_openrouter_key', newSettings.openrouterKey);
-    localStorage.setItem('copilot_openrouter_model', newSettings.openrouterModel);
-    localStorage.setItem('copilot_deepgram_key', newSettings.deepgramKey);
+    safeStorage.set('copilot_target_name', newSettings.targetName);
+    safeStorage.set('copilot_provider', newSettings.provider);
+    safeStorage.set('copilot_gemini_key', newSettings.geminiKey);
+    safeStorage.set('copilot_gemini_model', newSettings.geminiModel);
+    safeStorage.set('copilot_openrouter_key', newSettings.openrouterKey);
+    safeStorage.set('copilot_openrouter_model', newSettings.openrouterModel);
+    safeStorage.set('copilot_deepgram_key', newSettings.deepgramKey);
   };
 
   // 7. Font Scale Toggle (Accessibility)
   const handleToggleFontSize = () => {
     const nextMode = fontSizeMode === 'normal' ? 'large' : fontSizeMode === 'large' ? 'huge' : 'normal';
     setFontSizeMode(nextMode);
-    localStorage.setItem('copilot_font_size', nextMode);
+    safeStorage.set('copilot_font_size', nextMode);
   };
 
   return (

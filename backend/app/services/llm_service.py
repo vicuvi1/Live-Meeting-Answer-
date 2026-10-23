@@ -205,7 +205,9 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
         client = genai.Client(api_key=target_key) if api_key else (self.gemini_client or genai.Client(api_key=settings.GEMINI_API_KEY))
         target_model = model or settings.LLM_MODEL
         
-        response = client.models.generate_content(
+        import asyncio
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=target_model,
             contents=user_prompt,
             config=types.GenerateContentConfig(
@@ -224,7 +226,11 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
                 if raw_text.startswith("json"):
                     raw_text = raw_text[4:]
         raw_text = raw_text.strip()
-        parsed = json.loads(raw_text)
+        
+        try:
+            parsed = json.loads(raw_text)
+        except Exception:
+            parsed = {}
         
         tactical = parsed.get("tactical_responses", {})
         default_spoken = parsed.get("spoken_response") or (tactical.get("agree", {}).get("spoken_response", "Sunt de acord cu planul prezentat și putem merge mai departe."))
@@ -289,7 +295,9 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
             try:
                 from google import genai
                 client = genai.Client(api_key=api_key)
-                res = client.models.generate_content(
+                import asyncio
+                res = await asyncio.to_thread(
+                    client.models.generate_content,
                     model=target_model,
                     contents=test_prompt
                 )

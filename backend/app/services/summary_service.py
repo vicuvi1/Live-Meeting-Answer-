@@ -17,7 +17,7 @@ Generează un rezumat executiv în limba română care să conțină:
 1. "title": Un titlu sugestiv și concis pentru ședință.
 2. "summary": Un rezumat clar în 3-5 paragrafe al principalelor teme și concluzii discutate.
 3. "action_items": Lista deciziilor și acțiunilor concrete asumate de echipă (cine ce face).
-4. "questions_addressed_to_user": Lista întrebărilor adresate Oliviei în timpul ședinței și cum au fost rezolvate.
+4. "questions_addressed_to_user": Lista întrebărilor adresate utilizatorului în timpul ședinței și cum au fost rezolvate.
 
 FORMATUL RĂSPUNSULUI (JSON OBLIGATORIU):
 {
@@ -52,7 +52,9 @@ class SummaryService:
                 client = genai.Client(api_key=settings.GEMINI_API_KEY)
                 prompt = ROMANIAN_SUMMARY_PROMPT.format(full_transcript=transcript_text)
                 
-                response = client.models.generate_content(
+                import asyncio
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
                     model=settings.LLM_MODEL,
                     contents=prompt,
                     config=types.GenerateContentConfig(
