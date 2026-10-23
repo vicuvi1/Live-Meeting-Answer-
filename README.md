@@ -8,6 +8,10 @@
 
 > **An ultra-fast, discreet AI Meeting Copilot designed for users juggling dual meetings simultaneously (e.g., in-person and online on Zoom/Google Meet). It transcribes Romanian conversation in real-time, alerts the user when they are called upon, and provides a 1-tap "Lifesaver" button that instantly generates the perfect natural Romanian spoken response.**
 
+<div align="center">
+  <img src="docs/images/app_mockup.jpg" alt="Olivia Meeting Copilot Mockup" width="750" style="border-radius: 16px; margin: 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+</div>
+
 ---
 
 ## 🎯 The Core Problem & Solution
