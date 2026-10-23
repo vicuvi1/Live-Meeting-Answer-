@@ -1,69 +1,164 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
     android:background="@color/bg_dark"
-    android:padding="24dp"
-    android:gravity="center_horizontal">
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Olivia Copilot"
-        android:textColor="@color/text_white"
-        android:textSize="26sp"
-        android:textStyle="bold"
-        android:layout_marginTop="32dp" />
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Asistent Discret Ședințe Live (Română)"
-        android:textColor="@color/emerald_500"
-        android:textSize="14sp"
-        android:layout_marginBottom="40dp" />
-
-    <androidx.cardview.widget.CardView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:backgroundTint="@color/card_dark"
-        android:layout_marginBottom="24dp">
+        android:orientation="vertical"
+        android:padding="20dp"
+        android:gravity="center_horizontal">
 
-        <LinearLayout
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Olivia Copilot"
+            android:textColor="@color/text_white"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:layout_marginTop="20dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Asistent Discret Ședințe Live (Română)"
+            android:textColor="@color/emerald_500"
+            android:textSize="13sp"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Server & User Configuration Card -->
+        <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:backgroundTint="@color/card_dark"
+            android:layout_marginBottom="16dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Cum funcționează peste Zoom:"
-                android:textColor="@color/text_white"
-                android:textStyle="bold"
-                android:textSize="15sp"
-                android:layout_marginBottom="8dp"/>
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <TextView
-                android:layout_width="wrap_content"
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚙️ Configurare Conexiune"
+                    android:textColor="@color/text_white"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="12dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Adresă Server (IP PC sau Cloud):"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp"/>
+
+                <EditText
+                    android:id="@+id/editServerUrl"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:background="#0F172A"
+                    android:textColor="@color/text_white"
+                    android:padding="10dp"
+                    android:textSize="13sp"
+                    android:hint="ex: http://192.168.1.100:8000"
+                    android:textColorHint="#64748B"
+                    android:inputType="textUri"
+                    android:layout_marginBottom="12dp"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Numele persoanei asistate:"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp"/>
+
+                <EditText
+                    android:id="@+id/editTargetName"
+                    android:layout_width="match_parent"
+                    android:layout_height="46dp"
+                    android:background="#0F172A"
+                    android:textColor="@color/text_white"
+                    android:padding="10dp"
+                    android:textSize="13sp"
+                    android:text="Olivia"
+                    android:inputType="textPersonName"
+                    android:layout_marginBottom="12dp"/>
+
+                <Button
+                    android:id="@+id/btnTestConnection"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:text="🔌 Verifică Conexiunea"
+                    android:textAllCaps="false"
+                    android:backgroundTint="#334155"
+                    android:textColor="@color/text_white"
+                    android:textSize="13sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/txtConnectionStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Status: Neverificat"
+                    android:textColor="@color/text_muted"
+                    android:textSize="11sp"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="6dp"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Instructions Card -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="@color/card_dark"
+            android:layout_marginBottom="24dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="1. Apeși butonul verde de mai jos.\n2. Apare o mică bulă plutitoare.\n3. Deschizi Zoom sau Google Meet și participi normal (doar o singură Olivia apare în apel!).\n4. Când ești întrebată ceva, apeși bula și AI-ul îți dă instant replica perfectă de rostit."
-                android:textColor="@color/text_muted"
-                android:textSize="13sp"
-                android:lineSpacingExtra="4dp"/>
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
+                android:orientation="vertical"
+                android:padding="14dp">
 
-    <Button
-        android:id="@+id/btnToggleService"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="@string/btn_start_overlay"
-        android:textAllCaps="false"
-        android:backgroundTint="@color/emerald_600"
-        android:textColor="@color/text_white"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Instrucțiuni de Utilizare:"
+                    android:textColor="@color/text_white"
+                    android:textStyle="bold"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="6dp"/>
 
-</LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1. Apeși butonul verde de mai jos pentru a lansa bula.\n2. Deschizi Zoom sau Google Meet și participi normal (doar o singură Olivia apare în apel!).\n3. Bula vibrează și luminează în galben când ești întrebată ceva.\n4. O atingi și ai instant cele 3 răspunsuri: Da, Scuză Mute, sau Prudență."
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="3dp"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Main Toggle Button -->
+        <Button
+            android:id="@+id/btnToggleService"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_start_overlay"
+            android:textAllCaps="false"
+            android:backgroundTint="@color/emerald_600"
+            android:textColor="@color/text_white"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp"/>
+
+    </LinearLayout>
+</ScrollView>

@@ -1,9 +1,12 @@
 package com.olivia.copilot
 
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -11,28 +14,49 @@ import android.os.Build
 import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.speech.tts.TextToSpeech
+import android.util.DisplayMetrics
 import android.view.*
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONObject
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
-class FloatingBubbleService : Service() {
+class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
     private var cardView: View? = null
+    private var tts: TextToSpeech? = null
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private var initialX = 0
     private var initialY = 0
     private var initialTouchX = 0f
     private var initialTouchY = 0f
+    private var screenWidth = 1080
 
+    private var backendUrl = "http://10.0.2.2:8000"
+    private var targetName = "Olivia"
     private var activeSessionId = "default-session"
-    private var backendUrl = "http://10.0.2.2:8000" // Default emulator/local IP
+
+    // Tactical responses cache
+    private var currentAgree = "Sunt complet de acord cu propunerea și putem merge mai departe."
+    private var currentStall = "Vă rog să mă scuzați, a durat o secundă să găsesc butonul de unmute. Sunt aliniată cu ideea, trimit confirmarea detaliată pe mail imediat după ședință."
+    private var currentCaution = "Avem nevoie de cifrele finale de la financiar înainte să fixăm o decizie fermă; revin cu confirmarea după ce verific datele."
+    private var currentSelectedText = currentAgree
+    private var currentLiveQuestion = "Așteptare conversație din ședință..."
+
+    private var webSocket: WebSocket? = null
+    private val okHttpClient = OkHttpClient.Builder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
 
     companion object {
         private const val NOTIFICATION_ID = 2001
@@ -41,11 +65,40 @@ class FloatingBubbleService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.let {
+            backendUrl = it.getStringExtra("SERVER_URL") ?: backendUrl
+            targetName = it.getStringExtra("TARGET_NAME") ?: targetName
+        }
+        initWebSocketConnection()
+        return START_STICKY
+    }
+
     override fun onCreate() {
         super.onCreate()
         startAsForeground()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        tts = TextToSpeech(this, this)
+        measureScreen()
         initBubbleOverlay()
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.language = Locale("ro", "RO")
+        }
+    }
+
+    private fun measureScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = windowManager.currentWindowMetrics
+            screenWidth = metrics.bounds.width()
+        } else {
+            val dm = DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getMetrics(dm)
+            screenWidth = dm.widthPixels
+        }
     }
 
     private fun startAsForeground() {
@@ -60,8 +113,8 @@ class FloatingBubbleService : Service() {
         }
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Olivia Copilot este activ")
-            .setContentText("Atinge bula plutitoare pentru a primi răspunsul AI în ședință.")
+            .setContentTitle("Bula Olivia este activă peste Zoom")
+            .setContentText("Atinge bula pentru răspunsul AI instant în ședință.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
 
@@ -87,11 +140,13 @@ class FloatingBubbleService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 200
+            x = 20
+            y = 300
         }
 
-        bubbleView?.setOnTouchListener { view, event ->
+        val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
+
+        bubbleView?.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -109,9 +164,12 @@ class FloatingBubbleService : Service() {
                 MotionEvent.ACTION_UP -> {
                     val deltaX = Math.abs(event.rawX - initialTouchX)
                     val deltaY = Math.abs(event.rawY - initialTouchY)
-                    if (deltaX < 10 && deltaY < 10) {
-                        // Considered a Click
-                        showAnswerCard()
+                    if (deltaX < 15 && deltaY < 15) {
+                        // Click detected: Toggle answer card
+                        toggleAnswerCard()
+                    } else {
+                        // Drag released: Smooth snap to closest edge (left or right)
+                        snapBubbleToEdge(params)
                     }
                     true
                 }
@@ -122,8 +180,29 @@ class FloatingBubbleService : Service() {
         windowManager.addView(bubbleView, params)
     }
 
+    private fun snapBubbleToEdge(params: WindowManager.LayoutParams) {
+        val targetX = if (params.x < screenWidth / 2) 20 else screenWidth - 160
+        val animator = ValueAnimator.ofInt(params.x, targetX)
+        animator.duration = 200
+        animator.addUpdateListener { animation ->
+            params.x = animation.animatedValue as Int
+            if (bubbleView?.isAttachedToWindow == true) {
+                windowManager.updateViewLayout(bubbleView, params)
+            }
+        }
+        animator.start()
+    }
+
+    private fun toggleAnswerCard() {
+        if (cardView != null) {
+            removeAnswerCard()
+        } else {
+            showAnswerCard()
+        }
+    }
+
     private fun showAnswerCard() {
-        if (cardView != null) return // Already shown
+        if (cardView != null) return
 
         val layoutInflater = LayoutInflater.from(this)
         cardView = layoutInflater.inflate(R.layout.floating_answer_card, null)
@@ -139,37 +218,68 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.CENTER
         }
 
-        val btnClose = cardView?.findViewById<Button>(R.id.btnCloseCard)
-        val btnQuickAnswer = cardView?.findViewById<Button>(R.id.btnQuickAnswer)
-        val responseBox = cardView?.findViewById<View>(R.id.responseBox)
+        // Setup Card UI Elements
+        val btnClose = cardView?.findViewById<TextView>(R.id.btnCloseCard)
+        val btnAgree = cardView?.findViewById<Button>(R.id.btnTacticalAgree)
+        val btnStall = cardView?.findViewById<Button>(R.id.btnTacticalStall)
+        val btnCaution = cardView?.findViewById<Button>(R.id.btnTacticalCaution)
+        val btnCopy = cardView?.findViewById<Button>(R.id.btnCopyResponse)
+        val btnSpeak = cardView?.findViewById<Button>(R.id.btnSpeakResponse)
+        val btnDone = cardView?.findViewById<Button>(R.id.btnDone)
         val txtSpoken = cardView?.findViewById<TextView>(R.id.txtSpokenResponse)
+        val txtCaptions = cardView?.findViewById<TextView>(R.id.txtLiveCaptions)
 
-        btnClose?.setOnClickListener {
-            removeAnswerCard()
+        txtCaptions?.text = "\"$currentLiveQuestion\""
+        txtSpoken?.text = "\"$currentSelectedText\""
+
+        btnAgree?.setOnClickListener {
+            currentSelectedText = currentAgree
+            txtSpoken?.text = "\"$currentAgree\""
+            highlightTacticalButton(btnAgree, btnStall, btnCaution)
         }
 
-        btnQuickAnswer?.setOnClickListener {
-            btnQuickAnswer.text = "Se generează..."
-            btnQuickAnswer.isEnabled = false
-
-            scope.launch(Dispatchers.IO) {
-                val answer = fetchQuickAnswer()
-                withContext(Dispatchers.Main) {
-                    btnQuickAnswer.text = "💡 Ce să răspund acum?"
-                    btnQuickAnswer.isEnabled = true
-                    responseBox?.visibility = View.VISIBLE
-                    txtSpoken?.text = "\"$answer\""
-                }
-            }
+        btnStall?.setOnClickListener {
+            currentSelectedText = currentStall
+            txtSpoken?.text = "\"$currentStall\""
+            highlightTacticalButton(btnStall, btnAgree, btnCaution)
         }
+
+        btnCaution?.setOnClickListener {
+            currentSelectedText = currentCaution
+            txtSpoken?.text = "\"$currentCaution\""
+            highlightTacticalButton(btnCaution, btnAgree, btnStall)
+        }
+
+        btnCopy?.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Raspuns Olivia", currentSelectedText)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(this, "Copiat în memorie!", Toast.LENGTH_SHORT).show()
+        }
+
+        btnSpeak?.setOnClickListener {
+            tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
+        }
+
+        btnClose?.setOnClickListener { removeAnswerCard() }
+        btnDone?.setOnClickListener { removeAnswerCard() }
+
+        // Reset bubble alert visual state once opened
+        resetBubbleToIdle()
 
         windowManager.addView(cardView, cardParams)
+    }
+
+    private fun highlightTacticalButton(selected: Button?, other1: Button?, other2: Button?) {
+        selected?.alpha = 1.0f
+        other1?.alpha = 0.5f
+        other2?.alpha = 0.5f
     }
 
     private fun removeAnswerCard() {
@@ -179,44 +289,67 @@ class FloatingBubbleService : Service() {
         }
     }
 
-    private fun fetchQuickAnswer(): String {
-        return try {
-            val client = OkHttpClient()
-            val json = JSONObject().apply {
-                put("session_id", activeSessionId)
-                put("target_name", "Olivia")
-            }
-            val body = RequestBody.create(
-                MediaType.parse("application/json; charset=utf-8"),
-                json.toString()
-            )
-            val request = Request.Builder()
-                .url("$backendUrl/api/copilot/quick-answer")
-                .post(body)
-                .build()
+    private fun initWebSocketConnection() {
+        val wsUrl = backendUrl.replace("http://", "ws://").replace("https://", "wss://") + "/ws/$activeSessionId"
+        val request = Request.Builder().url(wsUrl).build()
 
-            val response = client.newCall(request).execute()
-            val bodyStr = response.body()?.string() ?: ""
-            val obj = JSONObject(bodyStr)
-            obj.optString("spoken_response", "Sunt de acord cu planul stabilit și putem continua.")
-        } catch (e: Exception) {
-            "Sunt de acord cu decizia colegilor; voi reveni cu confirmarea scrisă pe mail imediat după ședință."
+        webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val obj = JSONObject(text)
+                    when (obj.optString("type")) {
+                        "TARGET_ALERT" -> {
+                            val alertText = obj.optString("text")
+                            currentLiveQuestion = alertText
+                            triggerBubbleAlert()
+                        }
+                        "PRECOMPUTED_ANSWERS", "QUICK_ANSWER" -> {
+                            val tactical = obj.optJSONObject("tactical_responses")
+                            if (tactical != null) {
+                                currentAgree = tactical.optJSONObject("agree")?.optString("spoken_response") ?: currentAgree
+                                currentStall = tactical.optJSONObject("stall")?.optString("spoken_response") ?: currentStall
+                                currentCaution = tactical.optJSONObject("caution")?.optString("spoken_response") ?: currentCaution
+                                currentSelectedText = currentAgree
+                            }
+                            currentLiveQuestion = obj.optString("question_detected", currentLiveQuestion)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignored
+                }
+            }
+        })
+    }
+
+    private fun triggerBubbleAlert() {
+        scope.launch(Dispatchers.Main) {
+            val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
+            bgView?.setBackgroundResource(R.drawable.circle_bubble_alert)
+            vibrateAlert()
         }
+    }
+
+    private fun resetBubbleToIdle() {
+        val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
+        bgView?.setBackgroundResource(R.drawable.circle_bubble)
     }
 
     private fun vibrateAlert() {
         val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE))
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 300), -1))
         } else {
             @Suppress("DEPRECATION")
-            vibrator.vibrate(400)
+            vibrator.vibrate(300)
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
+        webSocket?.close(1000, "Service stopped")
+        tts?.stop()
+        tts?.shutdown()
         if (bubbleView != null) {
             windowManager.removeView(bubbleView)
             bubbleView = null
