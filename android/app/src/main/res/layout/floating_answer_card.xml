@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cardRoot"
+    android:layout_width="320dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/bg_dark"
+    android:padding="16dp"
+    android:elevation="12dp">
+
+    <!-- Header -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Asistent Olivia"
+            android:textColor="@color/emerald_500"
+            android:textStyle="bold"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnCloseCard"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_alignParentEnd="true"
+            android:text="✕"
+            android:textColor="@color/text_muted"
+            android:background="?android:attr/selectableItemBackground"
+            android:textSize="14sp" />
+    </RelativeLayout>
+
+    <!-- Subtitle preview -->
+    <TextView
+        android:id="@+id/txtLiveCaptions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Se ascultă conversația din ședință..."
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:italic="true"
+        android:maxLines="3"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Big Answer Button -->
+    <Button
+        android:id="@+id/btnQuickAnswer"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="💡 Ce să răspund acum?"
+        android:textAllCaps="false"
+        android:backgroundTint="@color/emerald_600"
+        android:textColor="@color/text_white"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <!-- The Response Box -->
+    <LinearLayout
+        android:id="@+id/responseBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/card_dark"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📢 RĂSPUNS DE SPUS CU VOCE TARE:"
+            android:textColor="@color/emerald_500"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/txtSpokenResponse"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sunt de acord cu propunerea și putem continua."
+            android:textColor="@color/text_white"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="3dp" />
+    </LinearLayout>
+
+</LinearLayout>

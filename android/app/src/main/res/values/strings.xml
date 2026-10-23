@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Olivia Copilot</string>
+    <string name="btn_start_overlay">Pornește Asistentul Peste Zoom</string>
+    <string name="btn_stop_overlay">Oprește Asistentul</string>
+    <string name="txt_permission_needed">Este necesară permisiunea de afișare peste alte aplicații pentru a funcționa peste Zoom.</string>
+</resources>

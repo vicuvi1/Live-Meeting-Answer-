@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - TARGET_NAME=Olivia
+      - DEFAULT_LANGUAGE=ro
+      - DATABASE_URL=sqlite+aiosqlite:///./data/copilot.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+    volumes:
+      - copilot_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  copilot_data:
