@@ -147,16 +147,28 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Main Toggle Button -->
+        <!-- Dual Launch Buttons for Mom -->
+        <Button
+            android:id="@+id/btnOpenFullscreen"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="📱 Deschide pe Tot Ecranul (Recomandat)"
+            android:textAllCaps="false"
+            android:backgroundTint="#047857"
+            android:textColor="@color/text_white"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp"/>
+
         <Button
             android:id="@+id/btnToggleService"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="@string/btn_start_overlay"
+            android:layout_height="52dp"
+            android:text="🫧 Lansează Bula Plutitoare (Peste Zoom)"
             android:textAllCaps="false"
-            android:backgroundTint="@color/emerald_600"
+            android:backgroundTint="#1E293B"
             android:textColor="@color/text_white"
-            android:textSize="16sp"
+            android:textSize="14sp"
             android:textStyle="bold"
             android:layout_marginBottom="24dp"/>
 

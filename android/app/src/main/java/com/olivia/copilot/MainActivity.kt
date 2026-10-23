@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 class MainActivity : AppCompatActivity() {
 
     private lateinit var btnToggle: Button
+    private lateinit var btnOpenFullscreen: Button
     private lateinit var btnTestConnection: Button
     private lateinit var editServerUrl: EditText
     private lateinit var editTargetName: EditText
@@ -48,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         btnToggle = findViewById(R.id.btnToggleService)
+        btnOpenFullscreen = findViewById(R.id.btnOpenFullscreen)
         btnTestConnection = findViewById(R.id.btnTestConnection)
         editServerUrl = findViewById(R.id.editServerUrl)
         editTargetName = findViewById(R.id.editTargetName)
@@ -61,6 +63,17 @@ class MainActivity : AppCompatActivity() {
 
         // Check Notification Permission on Android 13+
         checkNotificationPermission()
+
+        btnOpenFullscreen.setOnClickListener {
+            savePreferences()
+            val intent = Intent(this, FullScreenActivity::class.java).apply {
+                val base = editServerUrl.text.toString().trim()
+                // Frontend is served on port 5173 or base
+                val urlToLoad = if (base.endsWith(":8000")) base.replace(":8000", ":5173") else base
+                putExtra("SERVER_URL", urlToLoad)
+            }
+            startActivity(intent)
+        }
 
         btnTestConnection.setOnClickListener {
             testServerConnection()

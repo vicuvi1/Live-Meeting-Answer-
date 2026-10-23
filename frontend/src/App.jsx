@@ -18,6 +18,7 @@ export default function App() {
   const [isLoadingAnswer, setIsLoadingAnswer] = useState(false);
   const [recentAlert, setRecentAlert] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [fontSizeMode, setFontSizeMode] = useState(localStorage.getItem('olivia_font_size') || 'normal');
   
   // Modals
   const [showSimulator, setShowSimulator] = useState(false);
@@ -190,6 +191,13 @@ export default function App() {
     localStorage.setItem('olivia_deepgram_key', newSettings.deepgramKey);
   };
 
+  // 7. Font Scale Toggle (Accessibility for Mom)
+  const handleToggleFontSize = () => {
+    const nextMode = fontSizeMode === 'normal' ? 'large' : fontSizeMode === 'large' ? 'huge' : 'normal';
+    setFontSizeMode(nextMode);
+    localStorage.setItem('olivia_font_size', nextMode);
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       
@@ -200,6 +208,8 @@ export default function App() {
         connectionStatus={connectionStatus}
         targetName={settings.targetName}
         onOpenSettings={() => setShowSettings(true)}
+        fontSizeMode={fontSizeMode}
+        onToggleFontSize={handleToggleFontSize}
       />
 
       {/* Main Body */}
@@ -216,6 +226,8 @@ export default function App() {
             onEndMeeting={handleEndMeeting}
             targetName={settings.targetName}
             onOpenSimulator={() => setShowSimulator(true)}
+            fontSizeMode={fontSizeMode}
+            precomputedAnswer={precomputedAnswer}
           />
         ) : (
           <SessionHistory
