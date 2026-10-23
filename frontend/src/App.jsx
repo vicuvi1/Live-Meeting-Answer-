@@ -26,7 +26,11 @@ export default function App() {
   // Settings
   const [settings, setSettings] = useState({
     targetName: localStorage.getItem('olivia_target_name') || 'Olivia',
+    provider: localStorage.getItem('olivia_provider') || 'gemini',
     geminiKey: localStorage.getItem('olivia_gemini_key') || '',
+    geminiModel: localStorage.getItem('olivia_gemini_model') || 'gemini-2.5-flash',
+    openrouterKey: localStorage.getItem('olivia_openrouter_key') || '',
+    openrouterModel: localStorage.getItem('olivia_openrouter_model') || 'google/gemini-2.0-flash-exp:free',
     deepgramKey: localStorage.getItem('olivia_deepgram_key') || ''
   });
 
@@ -107,7 +111,17 @@ export default function App() {
     setIsLoadingAnswer(true);
 
     try {
-      const answer = await api.getQuickAnswer(session.id, settings.targetName);
+      const activeKey = settings.provider === 'gemini' ? settings.geminiKey : settings.openrouterKey;
+      const activeModel = settings.provider === 'gemini' ? settings.geminiModel : settings.openrouterModel;
+
+      const answer = await api.getQuickAnswer(
+        session.id,
+        settings.targetName,
+        null,
+        settings.provider,
+        activeKey || null,
+        activeModel || null
+      );
       setCurrentAnswer({
         ...answer,
         initialMode: preferredMode || 'agree'
@@ -168,7 +182,11 @@ export default function App() {
   const handleSaveSettings = (newSettings) => {
     setSettings(newSettings);
     localStorage.setItem('olivia_target_name', newSettings.targetName);
+    localStorage.setItem('olivia_provider', newSettings.provider);
     localStorage.setItem('olivia_gemini_key', newSettings.geminiKey);
+    localStorage.setItem('olivia_gemini_model', newSettings.geminiModel);
+    localStorage.setItem('olivia_openrouter_key', newSettings.openrouterKey);
+    localStorage.setItem('olivia_openrouter_model', newSettings.openrouterModel);
     localStorage.setItem('olivia_deepgram_key', newSettings.deepgramKey);
   };
 

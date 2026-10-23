@@ -19,12 +19,16 @@ class Settings(BaseSettings):
     
     # AI Models & Keys
     GEMINI_API_KEY: Optional[str] = Field(default=None, validation_alias="GEMINI_API_KEY")
+    OPENROUTER_API_KEY: Optional[str] = Field(default=None, validation_alias="OPENROUTER_API_KEY")
     DEEPGRAM_API_KEY: Optional[str] = Field(default=None, validation_alias="DEEPGRAM_API_KEY")
     GROQ_API_KEY: Optional[str] = Field(default=None, validation_alias="GROQ_API_KEY")
     OPENAI_API_KEY: Optional[str] = Field(default=None, validation_alias="OPENAI_API_KEY")
     
-    # LLM settings
+    # Provider & Model Settings
+    DEFAULT_PROVIDER: str = "gemini"  # "gemini" | "openrouter" | "heuristic"
     LLM_MODEL: str = "gemini-2.5-flash"  # Ultra-fast, highly capable multilingual model
+    OPENROUTER_MODEL: str = "google/gemini-2.0-flash-exp:free" # Free model on OpenRouter
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     LLM_TEMPERATURE: float = 0.2
     
     # Buffer & Detection

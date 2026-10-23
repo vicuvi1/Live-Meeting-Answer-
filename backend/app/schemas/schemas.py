@@ -59,6 +59,9 @@ class QuickAnswerRequest(BaseModel):
     target_name: Optional[str] = "Olivia"
     custom_instruction: Optional[str] = None
     override_context: Optional[str] = None
+    provider: Optional[str] = None  # "gemini" | "openrouter"
+    api_key: Optional[str] = None   # dynamically provided key
+    model: Optional[str] = None     # e.g., "google/gemini-2.0-flash-exp:free" or "gemini-2.5-flash"
 
 class QuickAnswerResponse(BaseModel):
     id: str
@@ -70,6 +73,17 @@ class QuickAnswerResponse(BaseModel):
     latency_ms: int
     generated_at: datetime
     model_used: str
+
+class TestKeyRequest(BaseModel):
+    provider: str = Field(..., description="'gemini' or 'openrouter'")
+    api_key: str
+    model: Optional[str] = None
+
+class TestKeyResponse(BaseModel):
+    success: bool
+    message: str
+    model_used: str
+    latency_ms: int
 
 class AnswerFeedbackRequest(BaseModel):
     feedback: str = Field(..., description="'used', 'dismissed', 'thumbs_up', 'thumbs_down'")

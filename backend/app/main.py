@@ -43,5 +43,6 @@ async def health_check():
         "target_name": settings.TARGET_NAME,
         "default_language": settings.DEFAULT_LANGUAGE,
         "gemini_configured": bool(settings.GEMINI_API_KEY),
+        "openrouter_configured": bool(settings.OPENROUTER_API_KEY),
         "deepgram_configured": bool(settings.DEEPGRAM_API_KEY)
     }

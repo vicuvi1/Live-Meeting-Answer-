@@ -141,20 +141,32 @@ To build the APK:
 
 ## ⚙️ Configuration & Environment Variables
 
-Copy `backend/.env.example` to `backend/.env`:
+Copy `backend/.env.example` to `backend/.env` or configure directly from the in-app **Settings Modal**:
 
 ```ini
 TARGET_NAME=Olivia
 DEFAULT_LANGUAGE=ro
 DATABASE_URL=sqlite+aiosqlite:///./data/copilot.db
 
-# Optional: Add your Gemini API key for ultra-fast reasoning
-# (If omitted, the included intelligent Romanian heuristic engine will be used automatically)
+# Provider Choice: "gemini" or "openrouter"
+DEFAULT_PROVIDER=gemini
+
+# Option 1: Google Gemini (Free tier available at https://aistudio.google.com/)
 GEMINI_API_KEY=your_gemini_api_key_here
+LLM_MODEL=gemini-2.5-flash
+
+# Option 2: OpenRouter (Free & Paid models like Gemini, Llama 3.3, DeepSeek at https://openrouter.ai/)
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free
 
 # Optional: Add Deepgram API key for server-side Romanian STT
 DEEPGRAM_API_KEY=your_deepgram_api_key_here
 ```
+
+### 🆓 Supported Free Models:
+- **Google Gemini Direct:** `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-1.5-flash-8b` (free on Google AI Studio).
+- **OpenRouter Free Tier:** `google/gemini-2.0-flash-exp:free`, `meta-llama/llama-3.3-70b-instruct:free`, `mistralai/mistral-7b-instruct:free` (100% free via OpenRouter key).
+- **Instant Connection Test:** In the app Settings, click **"⚡ Testează Cheia & Conexiunea"** to verify your key and measure model response time.
 
 ---
 

@@ -2,6 +2,7 @@ import time
 import json
 import logging
 from typing import List, Dict, Any, Optional
+import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -71,10 +72,14 @@ class LLMService:
         self,
         transcript_context: str,
         target_name: str = "Olivia",
-        custom_instruction: Optional[str] = None
+        custom_instruction: Optional[str] = None,
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generates an instant spoken response for the target user based on the meeting context.
+        Supports Google Gemini (direct) or OpenRouter (free/paid models), with dynamic keys.
         """
         start_time = time.time()
         
@@ -90,25 +95,114 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
             
         user_prompt += "\nGenerează răspunsul în formatul JSON solicitat:"
 
-        # Try Gemini first if key available
-        if self.gemini_client or settings.GEMINI_API_KEY:
+        active_provider = provider or settings.DEFAULT_PROVIDER
+
+        # 1. OpenRouter Provider
+        if active_provider == "openrouter":
+            active_key = api_key or settings.OPENROUTER_API_KEY
+            if active_key:
+                try:
+                    return await self._call_openrouter(
+                        user_prompt=user_prompt,
+                        api_key=active_key,
+                        model=model or settings.OPENROUTER_MODEL,
+                        start_time=start_time
+                    )
+                except Exception as e:
+                    logger.error(f"OpenRouter API error: {e}. Falling back to heuristic.")
+            else:
+                logger.warning("OpenRouter provider chosen but no API key configured.")
+
+        # 2. Gemini Provider (default)
+        active_gemini_key = api_key if (active_provider == "gemini" and api_key) else settings.GEMINI_API_KEY
+        if active_gemini_key or self.gemini_client:
             try:
-                return await self._call_gemini(user_prompt, start_time)
+                return await self._call_gemini(
+                    user_prompt=user_prompt,
+                    api_key=active_gemini_key,
+                    model=model or settings.LLM_MODEL,
+                    start_time=start_time
+                )
             except Exception as e:
                 logger.error(f"Gemini API error: {e}. Falling back to smart heuristic engine.")
 
-        # Fallback to intelligent contextual heuristic engine (works with 0 external API keys for testing)
+        # 3. Fallback to intelligent contextual heuristic engine (works with 0 external API keys)
         return self._generate_heuristic_response(transcript_context, target_name, start_time)
 
-    async def _call_gemini(self, user_prompt: str, start_time: float) -> Dict[str, Any]:
+    async def _call_openrouter(
+        self,
+        user_prompt: str,
+        api_key: str,
+        model: str,
+        start_time: float
+    ) -> Dict[str, Any]:
+        """Calls OpenRouter chat completions API (supports Gemini, Llama, DeepSeek, etc.)."""
+        url = f"{settings.OPENROUTER_BASE_URL}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://github.com/vicuvi1/Live-Meeting-Answer-",
+            "X-Title": "Olivia Meeting Copilot",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model or settings.OPENROUTER_MODEL,
+            "messages": [
+                {"role": "system", "content": ROMANIAN_COPILOT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            "temperature": settings.LLM_TEMPERATURE,
+            "response_format": {"type": "json_object"}
+        }
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            res = await client.post(url, json=payload, headers=headers)
+            res.raise_for_status()
+            data = res.json()
+            content = data["choices"][0]["message"]["content"]
+
+            clean = content.strip()
+            if clean.startswith("```"):
+                parts = clean.split("```")
+                if len(parts) >= 2:
+                    clean = parts[1]
+                    if clean.startswith("json"):
+                        clean = clean[4:]
+            clean = clean.strip()
+
+            parsed = json.loads(clean)
+            latency = int((time.time() - start_time) * 1000)
+
+            tactical = parsed.get("tactical_responses", {})
+            default_spoken = parsed.get("spoken_response") or (
+                tactical.get("agree", {}).get("spoken_response", "Sunt de acord cu propunerea colegilor.")
+            )
+
+            return {
+                "question_detected": parsed.get("question_detected", "Întrebare identificată în ședință"),
+                "spoken_response": default_spoken,
+                "talking_points": parsed.get("talking_points", ["Aliniere completă cu echipa."]),
+                "tactical_responses": tactical,
+                "latency_ms": latency,
+                "model_used": f"openrouter/{model or settings.OPENROUTER_MODEL}"
+            }
+
+    async def _call_gemini(
+        self,
+        user_prompt: str,
+        start_time: float,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Calls Gemini Flash with ultra-fast latency."""
         from google import genai
         from google.genai import types
         
-        client = self.gemini_client or genai.Client(api_key=settings.GEMINI_API_KEY)
+        target_key = api_key or settings.GEMINI_API_KEY
+        client = genai.Client(api_key=target_key) if api_key else (self.gemini_client or genai.Client(api_key=settings.GEMINI_API_KEY))
+        target_model = model or settings.LLM_MODEL
         
         response = client.models.generate_content(
-            model=settings.LLM_MODEL,
+            model=target_model,
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=ROMANIAN_COPILOT_SYSTEM_PROMPT,
@@ -129,8 +223,77 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
             "talking_points": parsed.get("talking_points", ["Totul este aliniat cu obiectivele stabilite."]),
             "tactical_responses": tactical,
             "latency_ms": latency,
-            "model_used": settings.LLM_MODEL
+            "model_used": target_model
         }
+
+    async def test_connection(
+        self,
+        provider: str,
+        api_key: str,
+        model: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Validates that a provided API key functions correctly for Gemini or OpenRouter."""
+        start_time = time.time()
+        test_prompt = "Răspunde strict în limba română cu un singur cuvânt: 'Activ'."
+
+        if provider.lower() == "openrouter":
+            target_model = model or settings.OPENROUTER_MODEL
+            url = f"{settings.OPENROUTER_BASE_URL}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/vicuvi1/Live-Meeting-Answer-",
+                "X-Title": "Olivia Meeting Copilot",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": target_model,
+                "messages": [{"role": "user", "content": test_prompt}],
+                "max_tokens": 10
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(url, json=payload, headers=headers)
+                if not res.is_success:
+                    err_detail = res.text
+                    try:
+                        err_obj = res.json()
+                        err_detail = err_obj.get("error", {}).get("message", err_detail)
+                    except Exception:
+                        pass
+                    return {
+                        "success": False,
+                        "message": f"OpenRouter a refuzat cheia: {err_detail}",
+                        "model_used": target_model,
+                        "latency_ms": int((time.time() - start_time) * 1000)
+                    }
+                return {
+                    "success": True,
+                    "message": f"Conexiune OpenRouter reușită cu modelul '{target_model}'!",
+                    "model_used": target_model,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+
+        else: # Gemini
+            target_model = model or settings.LLM_MODEL
+            try:
+                from google import genai
+                client = genai.Client(api_key=api_key)
+                res = client.models.generate_content(
+                    model=target_model,
+                    contents=test_prompt
+                )
+                return {
+                    "success": True,
+                    "message": f"Conexiune Google Gemini confirmată cu modelul '{target_model}'!",
+                    "model_used": target_model,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Eroare cheie Gemini: {str(e)}",
+                    "model_used": target_model,
+                    "latency_ms": int((time.time() - start_time) * 1000)
+                }
 
     def _generate_heuristic_response(self, transcript: str, target_name: str, start_time: float) -> Dict[str, Any]:
         """

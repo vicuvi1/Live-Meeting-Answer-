@@ -88,17 +88,41 @@ export const api = {
   },
 
   // Copilot Quick Answer
-  async getQuickAnswer(sessionId, targetName = 'Olivia', customInstruction = null) {
+  async getQuickAnswer(
+    sessionId, 
+    targetName = 'Olivia', 
+    customInstruction = null,
+    provider = null,
+    apiKey = null,
+    model = null
+  ) {
     const res = await fetch(`${API_BASE}/copilot/quick-answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         session_id: sessionId,
         target_name: targetName,
-        custom_instruction: customInstruction
+        custom_instruction: customInstruction,
+        provider,
+        api_key: apiKey,
+        model
       })
     });
     if (!res.ok) throw new Error('Eroare la generarea răspunsului AI');
+    return res.json();
+  },
+
+  async testApiKey(provider, apiKey, model = null) {
+    const res = await fetch(`${API_BASE}/copilot/test-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        api_key: apiKey,
+        model
+      })
+    });
+    if (!res.ok) throw new Error('Eroare la testarea cheii');
     return res.json();
   },
 

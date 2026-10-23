@@ -95,3 +95,14 @@ async def test_full_copilot_workflow():
         assert export_res.status_code == 200
         assert "Ședință Test Buget" in export_res.text
         assert "Olivia" in export_res.text
+
+        # 8. Test key validation endpoint
+        test_key_res = await client.post("/api/copilot/test-key", json={
+            "provider": "openrouter",
+            "api_key": "sk-dummy-test-key",
+            "model": "google/gemini-2.0-flash-exp:free"
+        })
+        assert test_key_res.status_code == 200
+        test_key_data = test_key_res.json()
+        assert "success" in test_key_data
+        assert "message" in test_key_data

@@ -8,7 +8,13 @@ from app.core.database import get_db
 from app.models.transcript import TranscriptSegment
 from app.models.session import MeetingSession
 from app.models.answer import AiAnswer
-from app.schemas.schemas import QuickAnswerRequest, QuickAnswerResponse, AnswerFeedbackRequest
+from app.schemas.schemas import (
+    QuickAnswerRequest, 
+    QuickAnswerResponse, 
+    AnswerFeedbackRequest,
+    TestKeyRequest,
+    TestKeyResponse
+)
 from app.services.llm_service import llm_service
 from app.core.config import settings
 
@@ -20,6 +26,7 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
     Core Lifesaver Button Endpoint:
     Fetches the recent meeting transcript chunk and prompts the AI to produce
     the exact spoken Romanian response for Olivia to say.
+    Supports Google Gemini (direct free/paid) and OpenRouter models.
     """
     # Verify session
     session_q = select(MeetingSession).where(MeetingSession.id == request.session_id)
@@ -47,11 +54,14 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
 
     target = request.target_name or settings.TARGET_NAME
 
-    # Call AI Engine
+    # Call AI Engine (handles Gemini, OpenRouter, or smart fallback)
     ai_result = await llm_service.generate_quick_answer(
         transcript_context=context_text,
         target_name=target,
-        custom_instruction=request.custom_instruction
+        custom_instruction=request.custom_instruction,
+        provider=request.provider,
+        api_key=request.api_key,
+        model=request.model
     )
 
     # Persist in DB
@@ -119,3 +129,18 @@ async def record_answer_feedback(
     answer.feedback = feedback_req.feedback
     await db.commit()
     return {"status": "success", "feedback": answer.feedback}
+
+@router.post("/test-key", response_model=TestKeyResponse)
+async def test_api_key(req: TestKeyRequest):
+    """Tests if a user-supplied Google Gemini or OpenRouter key is valid."""
+    result = await llm_service.test_connection(
+        provider=req.provider,
+        api_key=req.api_key.strip(),
+        model=req.model
+    )
+    return TestKeyResponse(
+        success=result["success"],
+        message=result["message"],
+        model_used=result["model_used"],
+        latency_ms=result["latency_ms"]
+    )
