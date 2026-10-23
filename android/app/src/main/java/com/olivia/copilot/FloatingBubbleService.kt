@@ -16,6 +16,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.*
 import android.widget.Button
 import android.widget.TextView
@@ -122,62 +123,66 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun initBubbleOverlay() {
-        val layoutInflater = LayoutInflater.from(this)
-        bubbleView = layoutInflater.inflate(R.layout.floating_bubble_layout, null)
+        runCatching {
+            val layoutInflater = LayoutInflater.from(this)
+            bubbleView = layoutInflater.inflate(R.layout.floating_bubble_layout, null)
 
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 300
-        }
-
-        val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
-
-        bubbleView?.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(bubbleView, params)
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    val deltaX = Math.abs(event.rawX - initialTouchX)
-                    val deltaY = Math.abs(event.rawY - initialTouchY)
-                    if (deltaX < 15 && deltaY < 15) {
-                        // Click detected: Toggle answer card
-                        toggleAnswerCard()
-                    } else {
-                        // Drag released: Smooth snap to closest edge (left or right)
-                        snapBubbleToEdge(params)
-                    }
-                    true
-                }
-                else -> false
+            val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
             }
-        }
 
-        windowManager.addView(bubbleView, params)
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                layoutType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = 20
+                y = 300
+            }
+
+            bubbleView?.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = params.x
+                        initialY = params.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        params.x = initialX + (event.rawX - initialTouchX).toInt()
+                        params.y = initialY + (event.rawY - initialTouchY).toInt()
+                        if (bubbleView?.isAttachedToWindow == true) {
+                            runCatching { windowManager.updateViewLayout(bubbleView, params) }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val deltaX = Math.abs(event.rawX - initialTouchX)
+                        val deltaY = Math.abs(event.rawY - initialTouchY)
+                        if (deltaX < 15 && deltaY < 15) {
+                            // Click detected: Toggle answer card
+                            toggleAnswerCard()
+                        } else {
+                            // Drag released: Smooth snap to closest edge (left or right)
+                            snapBubbleToEdge(params)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
+
+            windowManager.addView(bubbleView, params)
+        }.onFailure { e ->
+            Log.e("FloatingBubbleService", "Error adding floating bubble to WindowManager", e)
+        }
     }
 
     private fun snapBubbleToEdge(params: WindowManager.LayoutParams) {
@@ -187,7 +192,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         animator.addUpdateListener { animation ->
             params.x = animation.animatedValue as Int
             if (bubbleView?.isAttachedToWindow == true) {
-                windowManager.updateViewLayout(bubbleView, params)
+                runCatching { windowManager.updateViewLayout(bubbleView, params) }
             }
         }
         animator.start()
@@ -204,76 +209,85 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     private fun showAnswerCard() {
         if (cardView != null) return
 
-        val layoutInflater = LayoutInflater.from(this)
-        cardView = layoutInflater.inflate(R.layout.floating_answer_card, null)
+        runCatching {
+            val layoutInflater = LayoutInflater.from(this)
+            cardView = layoutInflater.inflate(R.layout.floating_answer_card, null)
 
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
+            val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            }
+
+            val cardParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                layoutType,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+
+            // Setup Card UI Elements
+            val btnClose = cardView?.findViewById<TextView>(R.id.btnCloseCard)
+            val btnAgree = cardView?.findViewById<Button>(R.id.btnTacticalAgree)
+            val btnStall = cardView?.findViewById<Button>(R.id.btnTacticalStall)
+            val btnCaution = cardView?.findViewById<Button>(R.id.btnTacticalCaution)
+            val btnCopy = cardView?.findViewById<Button>(R.id.btnCopyResponse)
+            val btnSpeak = cardView?.findViewById<Button>(R.id.btnSpeakResponse)
+            val btnDone = cardView?.findViewById<Button>(R.id.btnDone)
+            val txtSpoken = cardView?.findViewById<TextView>(R.id.txtSpokenResponse)
+            val txtCaptions = cardView?.findViewById<TextView>(R.id.txtLiveCaptions)
+
+            txtCaptions?.text = "\"$currentLiveQuestion\""
+            txtSpoken?.text = "\"$currentSelectedText\""
+
+            btnAgree?.setOnClickListener {
+                currentSelectedText = currentAgree
+                txtSpoken?.text = "\"$currentAgree\""
+                highlightTacticalButton(btnAgree, btnStall, btnCaution)
+            }
+
+            btnStall?.setOnClickListener {
+                currentSelectedText = currentStall
+                txtSpoken?.text = "\"$currentStall\""
+                highlightTacticalButton(btnStall, btnAgree, btnCaution)
+            }
+
+            btnCaution?.setOnClickListener {
+                currentSelectedText = currentCaution
+                txtSpoken?.text = "\"$currentCaution\""
+                highlightTacticalButton(btnCaution, btnAgree, btnStall)
+            }
+
+            btnCopy?.setOnClickListener {
+                runCatching {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Raspuns Olivia", currentSelectedText)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(this, "Copiat în memorie!", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            btnSpeak?.setOnClickListener {
+                runCatching {
+                    tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
+                }
+            }
+
+            btnClose?.setOnClickListener { removeAnswerCard() }
+            btnDone?.setOnClickListener { removeAnswerCard() }
+
+            // Reset bubble alert visual state once opened
+            resetBubbleToIdle()
+
+            windowManager.addView(cardView, cardParams)
+        }.onFailure { e ->
+            Log.e("FloatingBubbleService", "Error showing answer card", e)
+            cardView = null
         }
-
-        val cardParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-        }
-
-        // Setup Card UI Elements
-        val btnClose = cardView?.findViewById<TextView>(R.id.btnCloseCard)
-        val btnAgree = cardView?.findViewById<Button>(R.id.btnTacticalAgree)
-        val btnStall = cardView?.findViewById<Button>(R.id.btnTacticalStall)
-        val btnCaution = cardView?.findViewById<Button>(R.id.btnTacticalCaution)
-        val btnCopy = cardView?.findViewById<Button>(R.id.btnCopyResponse)
-        val btnSpeak = cardView?.findViewById<Button>(R.id.btnSpeakResponse)
-        val btnDone = cardView?.findViewById<Button>(R.id.btnDone)
-        val txtSpoken = cardView?.findViewById<TextView>(R.id.txtSpokenResponse)
-        val txtCaptions = cardView?.findViewById<TextView>(R.id.txtLiveCaptions)
-
-        txtCaptions?.text = "\"$currentLiveQuestion\""
-        txtSpoken?.text = "\"$currentSelectedText\""
-
-        btnAgree?.setOnClickListener {
-            currentSelectedText = currentAgree
-            txtSpoken?.text = "\"$currentAgree\""
-            highlightTacticalButton(btnAgree, btnStall, btnCaution)
-        }
-
-        btnStall?.setOnClickListener {
-            currentSelectedText = currentStall
-            txtSpoken?.text = "\"$currentStall\""
-            highlightTacticalButton(btnStall, btnAgree, btnCaution)
-        }
-
-        btnCaution?.setOnClickListener {
-            currentSelectedText = currentCaution
-            txtSpoken?.text = "\"$currentCaution\""
-            highlightTacticalButton(btnCaution, btnAgree, btnStall)
-        }
-
-        btnCopy?.setOnClickListener {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("Raspuns Olivia", currentSelectedText)
-            clipboard.setPrimaryClip(clip)
-            Toast.makeText(this, "Copiat în memorie!", Toast.LENGTH_SHORT).show()
-        }
-
-        btnSpeak?.setOnClickListener {
-            tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
-        }
-
-        btnClose?.setOnClickListener { removeAnswerCard() }
-        btnDone?.setOnClickListener { removeAnswerCard() }
-
-        // Reset bubble alert visual state once opened
-        resetBubbleToIdle()
-
-        windowManager.addView(cardView, cardParams)
     }
 
     private fun highlightTacticalButton(selected: Button?, other1: Button?, other2: Button?) {
@@ -283,8 +297,12 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun removeAnswerCard() {
-        if (cardView != null) {
-            windowManager.removeView(cardView)
+        cardView?.let { view ->
+            runCatching {
+                if (view.isAttachedToWindow) {
+                    windowManager.removeView(view)
+                }
+            }
             cardView = null
         }
     }
@@ -295,7 +313,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
-                try {
+                runCatching {
                     val obj = JSONObject(text)
                     when (obj.optString("type")) {
                         "TARGET_ALERT" -> {
@@ -314,8 +332,8 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
                             currentLiveQuestion = obj.optString("question_detected", currentLiveQuestion)
                         }
                     }
-                } catch (e: Exception) {
-                    // Ignored
+                }.onFailure { e ->
+                    Log.w("FloatingBubbleService", "Error parsing WebSocket message", e)
                 }
             }
         })
@@ -323,35 +341,47 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
     private fun triggerBubbleAlert() {
         scope.launch(Dispatchers.Main) {
-            val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
-            bgView?.setBackgroundResource(R.drawable.circle_bubble_alert)
-            vibrateAlert()
+            runCatching {
+                val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
+                bgView?.setBackgroundResource(R.drawable.circle_bubble_alert)
+                vibrateAlert()
+            }
         }
     }
 
     private fun resetBubbleToIdle() {
-        val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
-        bgView?.setBackgroundResource(R.drawable.circle_bubble)
+        runCatching {
+            val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
+            bgView?.setBackgroundResource(R.drawable.circle_bubble)
+        }
     }
 
     private fun vibrateAlert() {
-        val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 300), -1))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(300)
+        runCatching {
+            val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 300), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(300)
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        scope.cancel()
-        webSocket?.close(1000, "Service stopped")
-        tts?.stop()
-        tts?.shutdown()
-        if (bubbleView != null) {
-            windowManager.removeView(bubbleView)
+        runCatching { scope.cancel() }
+        runCatching { webSocket?.close(1000, "Service stopped") }
+        runCatching {
+            tts?.stop()
+            tts?.shutdown()
+        }
+        bubbleView?.let { view ->
+            runCatching {
+                if (view.isAttachedToWindow) {
+                    windowManager.removeView(view)
+                }
+            }
             bubbleView = null
         }
         removeAnswerCard()

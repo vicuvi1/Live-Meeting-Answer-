@@ -1,9 +1,14 @@
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import sessions, transcripts, copilot, websocket
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("olivia_copilot")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,6 +32,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global Exception Handler (Never-Crash Guard)
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"[NEVER-CRASH GUARD] Caught unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "message": "A server error occurred, but the system intercepted it to prevent any crash.",
+            "error_type": exc.__class__.__name__,
+            "detail": str(exc)
+        }
+    )
 
 # Register routers
 app.include_router(sessions.router)

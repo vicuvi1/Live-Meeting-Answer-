@@ -97,37 +97,41 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
 
         active_provider = provider or settings.DEFAULT_PROVIDER
 
-        # 1. OpenRouter Provider
-        if active_provider == "openrouter":
-            active_key = api_key or settings.OPENROUTER_API_KEY
-            if active_key:
+        try:
+            # 1. OpenRouter Provider
+            if active_provider == "openrouter":
+                active_key = api_key or settings.OPENROUTER_API_KEY
+                if active_key:
+                    try:
+                        return await self._call_openrouter(
+                            user_prompt=user_prompt,
+                            api_key=active_key,
+                            model=model or settings.OPENROUTER_MODEL,
+                            start_time=start_time
+                        )
+                    except Exception as e:
+                        logger.error(f"OpenRouter API error: {e}. Falling back to heuristic.")
+                else:
+                    logger.warning("OpenRouter provider chosen but no API key configured.")
+
+            # 2. Gemini Provider (default)
+            active_gemini_key = api_key if (active_provider == "gemini" and api_key) else settings.GEMINI_API_KEY
+            if active_gemini_key or self.gemini_client:
                 try:
-                    return await self._call_openrouter(
+                    return await self._call_gemini(
                         user_prompt=user_prompt,
-                        api_key=active_key,
-                        model=model or settings.OPENROUTER_MODEL,
+                        api_key=active_gemini_key,
+                        model=model or settings.LLM_MODEL,
                         start_time=start_time
                     )
                 except Exception as e:
-                    logger.error(f"OpenRouter API error: {e}. Falling back to heuristic.")
-            else:
-                logger.warning("OpenRouter provider chosen but no API key configured.")
+                    logger.error(f"Gemini API error: {e}. Falling back to smart heuristic engine.")
 
-        # 2. Gemini Provider (default)
-        active_gemini_key = api_key if (active_provider == "gemini" and api_key) else settings.GEMINI_API_KEY
-        if active_gemini_key or self.gemini_client:
-            try:
-                return await self._call_gemini(
-                    user_prompt=user_prompt,
-                    api_key=active_gemini_key,
-                    model=model or settings.LLM_MODEL,
-                    start_time=start_time
-                )
-            except Exception as e:
-                logger.error(f"Gemini API error: {e}. Falling back to smart heuristic engine.")
-
-        # 3. Fallback to intelligent contextual heuristic engine (works with 0 external API keys)
-        return self._generate_heuristic_response(transcript_context, target_name, start_time)
+            # 3. Fallback to intelligent contextual heuristic engine (works with 0 external API keys)
+            return self._generate_heuristic_response(transcript_context, target_name, start_time)
+        except Exception as outer_err:
+            logger.critical(f"Unexpected error in LLM service: {outer_err}. Applying ultimate zero-crash fallback.")
+            return self._generate_heuristic_response(transcript_context or "", target_name or "Olivia", start_time)
 
     async def _call_openrouter(
         self,
