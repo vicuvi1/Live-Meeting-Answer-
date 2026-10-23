@@ -146,5 +146,45 @@ export const api = {
     const res = await fetch(`${API_BASE}/system/check-update`);
     if (!res.ok) throw new Error('Nu s-au putut verifica actualizările');
     return res.json();
+  },
+
+  // Romanian Subscriptions & Licensing
+  async getSubscription(deviceId = 'default_device') {
+    const res = await fetch(`${API_BASE}/subscription/status?device_id=${encodeURIComponent(deviceId)}`);
+    if (!res.ok) throw new Error('Eroare la verificarea statutului abonamentului');
+    return res.json();
+  },
+
+  async activateVoucher(code, deviceId = 'default_device') {
+    const res = await fetch(`${API_BASE}/subscription/activate-voucher`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, device_id: deviceId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Cod de voucher invalid');
+    return data;
+  },
+
+  async startTrial(deviceId = 'default_device') {
+    const res = await fetch(`${API_BASE}/subscription/start-trial`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: deviceId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Nu s-a putut activa perioada de probă');
+    return data;
+  },
+
+  async checkoutSubscription(planType, deviceId = 'default_device') {
+    const res = await fetch(`${API_BASE}/subscription/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan_type: planType, device_id: deviceId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Eroare la procesarea abonamentului');
+    return data;
   }
 };

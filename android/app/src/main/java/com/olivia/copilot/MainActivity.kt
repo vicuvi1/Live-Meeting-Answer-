@@ -108,6 +108,18 @@ class MainActivity : AppCompatActivity() {
 
         // Setup In-App Auto-Updater from GitHub
         setupUpdateManager()
+
+        // Subscription Manager Button
+        val btnOpenSub = findViewById<Button?>(R.id.btnOpenSubModal)
+        btnOpenSub?.setOnClickListener {
+            savePreferences()
+            val intent = Intent(this, FullScreenActivity::class.java).apply {
+                val base = editServerUrl.text.toString().trim()
+                val urlToLoad = if (base.endsWith(":8000")) base.replace(":8000", ":5173") else base
+                putExtra("SERVER_URL", urlToLoad)
+            }
+            startActivity(intent)
+        }
     }
 
     private fun checkNotificationPermission() {

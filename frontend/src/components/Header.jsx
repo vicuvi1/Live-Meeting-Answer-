@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Radio, History, Settings, Sparkles, Maximize2, Minimize2, Type, Download } from 'lucide-react';
+import { Radio, History, Settings, Sparkles, Maximize2, Minimize2, Type, Download, Crown } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function Header({ 
@@ -8,6 +8,8 @@ export default function Header({
   connectionStatus, 
   targetName = 'Olivia', 
   onOpenSettings,
+  onOpenSubscription,
+  subscriptionStatus,
   fontSizeMode = 'normal',
   onToggleFontSize
 }) {
@@ -89,6 +91,29 @@ export default function Header({
         {/* Usability Controls: Font Scale, Full Screen, Settings */}
         <div className="flex items-center space-x-1 sm:space-x-1.5">
           
+          {/* Subscription Status / Upgrade Button */}
+          {onOpenSubscription && (
+            subscriptionStatus?.is_active_pro ? (
+              <button
+                onClick={onOpenSubscription}
+                className="flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500/20 to-emerald-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-bold hover:brightness-110 transition shadow-sm"
+                title={`Abonament PRO activ (${subscriptionStatus.plan_name}). Apasă pentru detalii.`}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">PRO</span>
+              </button>
+            ) : (
+              <button
+                onClick={onOpenSubscription}
+                className="btn-tactile flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-[11px] font-extrabold shadow-md shadow-amber-900/30 transition shrink-0"
+                title="Deblochează accesul nelimitat PRO (7 zile gratuite)"
+              >
+                <Crown className="w-3.5 h-3.5 text-slate-950 font-bold" />
+                <span>PRO</span>
+              </button>
+            )
+          )}
+
           {/* Update Available Pulsing Pill */}
           {updateAvailable && (
             <a

@@ -5,6 +5,7 @@ import AnswerModal from './components/AnswerModal';
 import MeetingSimulator from './components/MeetingSimulator';
 import SessionHistory from './components/SessionHistory';
 import SettingsModal from './components/SettingsModal';
+import SubscriptionModal from './components/SubscriptionModal';
 import { api } from './services/api';
 import { WebSocketClient } from './services/websocketClient';
 import { AudioService } from './services/audioCapture';
@@ -23,6 +24,8 @@ export default function App() {
   // Modals
   const [showSimulator, setShowSimulator] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSubscription, setShowSubscription] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
 
   // Settings
   const [settings, setSettings] = useState({
@@ -37,10 +40,20 @@ export default function App() {
 
   const wsClientRef = useRef(null);
 
-  // 1. Initialize or load active session
+  // 1. Initialize or load active session and subscription
   useEffect(() => {
     initActiveSession();
+    loadSubscriptionStatus();
   }, []);
+
+  const loadSubscriptionStatus = async () => {
+    try {
+      const sub = await api.getSubscription();
+      setSubscriptionStatus(sub);
+    } catch (e) {
+      console.warn('Could not load subscription status:', e);
+    }
+  };
 
   const initActiveSession = async () => {
     try {
@@ -208,6 +221,8 @@ export default function App() {
         connectionStatus={connectionStatus}
         targetName={settings.targetName}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenSubscription={() => setShowSubscription(true)}
+        subscriptionStatus={subscriptionStatus}
         fontSizeMode={fontSizeMode}
         onToggleFontSize={handleToggleFontSize}
       />
@@ -269,6 +284,13 @@ export default function App() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Subscription Paywall Modal */}
+      <SubscriptionModal
+        isOpen={showSubscription}
+        onClose={() => setShowSubscription(false)}
+        onSubscriptionUpdated={loadSubscriptionStatus}
+      />
 
     </div>
   );

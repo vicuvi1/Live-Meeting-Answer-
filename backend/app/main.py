@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import sessions, transcripts, copilot, websocket
+from app.api import sessions, transcripts, copilot, websocket, subscription
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("olivia_copilot")
@@ -53,6 +53,7 @@ app.include_router(sessions.router)
 app.include_router(transcripts.router)
 app.include_router(copilot.router)
 app.include_router(websocket.router)
+app.include_router(subscription.router)
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():

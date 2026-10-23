@@ -251,6 +251,73 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- Romanian Subscription & VIP License Card -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/cardSubscription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:backgroundTint="#1F2937"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="⭐ Abonament &amp; Licență"
+                        android:textColor="#FBBF24"
+                        android:textStyle="bold"
+                        android:textSize="14sp"/>
+
+                    <TextView
+                        android:id="@+id/txtSubBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="PRO ACTIV"
+                        android:background="#065F46"
+                        android:textColor="#34D399"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:textSize="11sp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/txtSubDetails"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Acces complet: transcriere live nelimitată în română și răspunsuri tactice instant."
+                    android:textColor="#E5E7EB"
+                    android:textSize="12sp"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginBottom="10dp"/>
+
+                <Button
+                    android:id="@+id/btnOpenSubModal"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:text="👑 Gestionează Abonamentul PRO (LEI)"
+                    android:textAllCaps="false"
+                    android:backgroundTint="#D97706"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp"
+                    android:textStyle="bold"/>
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
         <!-- Instructions Card -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
