@@ -91,9 +91,16 @@ export default function App() {
         } else if (data.type === 'TARGET_ALERT') {
           setRecentAlert(data);
           AudioService.vibrateAlert();
+          if (data.text) {
+            AudioService.speakQuestion(data.text);
+          }
         } else if (data.type === 'PRECOMPUTED_ANSWERS') {
-          // Speculative 0ms background cache
+          // Speculative 0ms background cache - instantly show on screen!
           setPrecomputedAnswer(data);
+          setCurrentAnswer({
+            ...data,
+            initialMode: 'agree'
+          });
         } else if (data.type === 'QUICK_ANSWER') {
           setCurrentAnswer(data);
           setIsLoadingAnswer(false);

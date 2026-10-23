@@ -296,6 +296,15 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         other2?.alpha = 0.5f
     }
 
+    private fun refreshCardUI() {
+        cardView?.let { card ->
+            val txtSpoken = card.findViewById<TextView>(R.id.txtSpokenResponse)
+            val txtCaptions = card.findViewById<TextView>(R.id.txtLiveCaptions)
+            txtCaptions?.text = "\"$currentLiveQuestion\""
+            txtSpoken?.text = "\"$currentSelectedText\""
+        }
+    }
+
     private fun removeAnswerCard() {
         cardView?.let { view ->
             runCatching {
@@ -318,8 +327,9 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
                     when (obj.optString("type")) {
                         "TARGET_ALERT" -> {
                             val alertText = obj.optString("text")
+                            val urgency = obj.optInt("urgency", 7)
                             currentLiveQuestion = alertText
-                            triggerBubbleAlert()
+                            triggerBubbleAlert(alertText, urgency)
                         }
                         "PRECOMPUTED_ANSWERS", "QUICK_ANSWER" -> {
                             val tactical = obj.optJSONObject("tactical_responses")
@@ -330,6 +340,15 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
                                 currentSelectedText = currentAgree
                             }
                             currentLiveQuestion = obj.optString("question_detected", currentLiveQuestion)
+
+                            // Show the answer instantly on screen!
+                            scope.launch(Dispatchers.Main) {
+                                if (cardView == null) {
+                                    showAnswerCard()
+                                } else {
+                                    refreshCardUI()
+                                }
+                            }
                         }
                     }
                 }.onFailure { e ->
@@ -339,12 +358,24 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         })
     }
 
-    private fun triggerBubbleAlert() {
+    private fun triggerBubbleAlert(questionText: String, urgency: Int) {
         scope.launch(Dispatchers.Main) {
             runCatching {
                 val bgView = bubbleView?.findViewById<View>(R.id.bubbleBackground)
                 bgView?.setBackgroundResource(R.drawable.circle_bubble_alert)
                 vibrateAlert()
+
+                // Say to user question (voice whisper in ear / speaker)
+                if (urgency >= 7 && questionText.isNotBlank()) {
+                    tts?.speak("Întrebare: $questionText", TextToSpeech.QUEUE_FLUSH, null, "QuestionTTS")
+                }
+
+                // Show instantly the answer if card not already visible
+                if (cardView == null && urgency >= 7) {
+                    showAnswerCard()
+                } else {
+                    refreshCardUI()
+                }
             }
         }
     }
@@ -359,11 +390,13 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     private fun vibrateAlert() {
         runCatching {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            // Urgent 3-pulse vibration pattern: pulse 250ms, pause 150ms, pulse 250ms, pause 150ms, attention 450ms
+            val pattern = longArrayOf(0, 250, 150, 250, 150, 450)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 200, 100, 300), -1))
+                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(300)
+                vibrator.vibrate(pattern, -1)
             }
         }
     }

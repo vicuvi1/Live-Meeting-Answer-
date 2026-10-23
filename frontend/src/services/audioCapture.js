@@ -137,11 +137,29 @@ export class AudioService {
     window.speechSynthesis.speak(utterance);
   }
 
-  // Device vibration when Olivia's name is detected
+  // Device vibration when Olivia's name or question is detected
   static vibrateAlert() {
     if ('vibrate' in navigator) {
-      // Vibrate pattern: 200ms pulse, 100ms pause, 300ms pulse
-      navigator.vibrate([200, 100, 300]);
+      // Vibrate pattern: 250ms pulse, 150ms pause, 250ms pulse, 150ms pause, 450ms attention pulse
+      navigator.vibrate([250, 150, 250, 150, 450]);
     }
+  }
+
+  // Voice whisper / announce: Reads the incoming question directly to Olivia's earphone
+  static speakQuestion(questionText) {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+
+    const clean = questionText.replace(/^["']|["']$/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(`Întrebare: ${clean}`);
+    utterance.lang = 'ro-RO';
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const roVoice = voices.find(v => v.lang.startsWith('ro'));
+    if (roVoice) utterance.voice = roVoice;
+
+    window.speechSynthesis.speak(utterance);
   }
 }
