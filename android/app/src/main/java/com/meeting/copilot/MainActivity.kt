@@ -86,9 +86,7 @@ class MainActivity : AppCompatActivity() {
             savePreferences()
             val intent = Intent(this, FullScreenActivity::class.java).apply {
                 val base = editServerUrl.text.toString().trim()
-                // Frontend is served on port 5173 or base
-                val urlToLoad = if (base.endsWith(":8000")) base.replace(":8000", ":5173") else base
-                putExtra("SERVER_URL", urlToLoad)
+                putExtra("SERVER_URL", base)
             }
             startActivity(intent)
         }
@@ -115,8 +113,7 @@ class MainActivity : AppCompatActivity() {
             savePreferences()
             val intent = Intent(this, FullScreenActivity::class.java).apply {
                 val base = editServerUrl.text.toString().trim()
-                val urlToLoad = if (base.endsWith(":8000")) base.replace(":8000", ":5173") else base
-                putExtra("SERVER_URL", urlToLoad)
+                putExtra("SERVER_URL", base)
             }
             startActivity(intent)
         }

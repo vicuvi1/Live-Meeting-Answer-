@@ -16,8 +16,8 @@ Write-Host "[2/2] Starting Frontend Vite Server (http://localhost:5173)..." -For
 $frontendJob = Start-Process -FilePath "npm.cmd" -ArgumentList "run dev" -WorkingDirectory $frontendPath -PassThru
 
 Write-Host "`nBoth services are running!" -ForegroundColor Green
-Write-Host "Open on computer: http://localhost:5173" -ForegroundColor White
-Write-Host "Open on phone:     http://<YOUR_LOCAL_IP>:5173" -ForegroundColor White
+Write-Host "Open on computer: http://localhost:5173 (or http://localhost:8000)" -ForegroundColor White
+Write-Host "Open on phone:     http://<YOUR_LOCAL_IP>:5173 (or http://<YOUR_LOCAL_IP>:8000)" -ForegroundColor White
 Write-Host "`nPress Ctrl+C or close this terminal to stop." -ForegroundColor Gray
 
 try {

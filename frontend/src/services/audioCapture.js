@@ -49,13 +49,17 @@ export class AudioService {
       };
 
       this.recognition.onend = () => {
-        // Auto-restart if still flagged as listening (handles browser auto-timeout)
+        // Auto-restart with safe delay if still flagged as listening (handles browser auto-timeout)
         if (this.isListening) {
-          try {
-            this.recognition.start();
-          } catch (e) {
-            // Already started or restarting
-          }
+          setTimeout(() => {
+            if (this.isListening && this.recognition) {
+              try {
+                this.recognition.start();
+              } catch (e) {
+                // Already started or restarting
+              }
+            }
+          }, 350);
         }
       };
 
@@ -124,6 +128,7 @@ export class AudioService {
     if (!('speechSynthesis' in window) || !text) return;
     try {
       window.speechSynthesis.cancel(); // Stop any ongoing speech
+      window.speechSynthesis.resume(); // Ensure engine is unpaused on mobile
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ro-RO';
@@ -158,6 +163,7 @@ export class AudioService {
     if (!('speechSynthesis' in window) || !questionText) return;
     try {
       window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
 
       const clean = questionText.replace(/^["']|["']$/g, '').trim();
       if (!clean) return;

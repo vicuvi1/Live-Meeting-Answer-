@@ -106,3 +106,14 @@ async def test_full_copilot_workflow():
         test_key_data = test_key_res.json()
         assert "success" in test_key_data
         assert "message" in test_key_data
+
+        # 9. Test system check-update
+        update_res = await client.get("/api/system/check-update")
+        assert update_res.status_code == 200
+        assert "has_update" in update_res.json()
+        assert "apk_download_url" in update_res.json()
+
+        # 10. Test root frontend static serving
+        root_res = await client.get("/")
+        assert root_res.status_code == 200
+        assert "html" in root_res.headers.get("content-type", "")

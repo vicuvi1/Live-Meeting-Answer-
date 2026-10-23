@@ -55,6 +55,22 @@ manager = ConnectionManager()
 @router.websocket("/ws/{session_id}")
 async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
     await manager.connect(session_id, websocket)
+    
+    # Auto-ensure session exists in database so foreign keys and queries never fail
+    try:
+        async with AsyncSessionLocal() as db:
+            sess = await db.get(MeetingSession, session_id)
+            if not sess:
+                sess = MeetingSession(
+                    id=session_id,
+                    title=f"Ședință Live — {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                    status="active"
+                )
+                db.add(sess)
+                await db.commit()
+    except Exception as e:
+        logger.warning(f"Error ensuring session exists: {e}")
+
     try:
         while True:
             data_raw = await websocket.receive_text()
@@ -171,6 +187,8 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                     segments = list(reversed(res.scalars().all()))
                     
                     context_text = "\n".join([f"[{s.timestamp.strftime('%H:%M:%S')}] {s.speaker}: {s.text}" for s in segments])
+                    if not context_text:
+                        context_text = f"Ședința tocmai a început. Participanții se salută și fac prezența. {target_name} este prezent/ă."
                     
                     ai_res = await llm_service.generate_quick_answer(
                         transcript_context=context_text,

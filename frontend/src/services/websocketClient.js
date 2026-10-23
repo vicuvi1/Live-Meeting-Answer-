@@ -14,8 +14,12 @@ export class WebSocketClient {
 
   connect() {
     this.isManualClosed = false;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
+    let protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let host = window.location.host;
+    if (!host || window.location.protocol === 'file:') {
+      protocol = 'ws:';
+      host = '127.0.0.1:8000';
+    }
     const wsUrl = `${protocol}//${host}/ws/${this.sessionId}`;
 
     try {
@@ -46,11 +50,17 @@ export class WebSocketClient {
       };
 
       this.ws.onerror = (err) => {
-        console.error('WebSocket encountered error:', err);
-        this.ws.close();
+        console.warn('WebSocket notice:', err);
+        try {
+          if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            this.ws.close();
+          }
+        } catch (e) {
+          // Ignored
+        }
       };
     } catch (e) {
-      console.error('Failed to initiate WebSocket:', e);
+      console.warn('Failed to initiate WebSocket:', e);
       this.scheduleReconnect();
     }
   }

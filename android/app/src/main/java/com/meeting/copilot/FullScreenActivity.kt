@@ -62,6 +62,35 @@ class FullScreenActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 return false
             }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                if (request?.isForMainFrame == true) {
+                    val htmlError = """
+                        <!DOCTYPE html>
+                        <html lang="ro">
+                        <head>
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <style>
+                                body { background: #030712; color: #f8fafc; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; text-align: center; padding: 24px; box-sizing: border-box; }
+                                .card { background: #0f172a; border: 1px solid #1e293b; padding: 28px 24px; border-radius: 24px; max-width: 360px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
+                                h2 { color: #10b981; margin: 0 0 12px 0; font-size: 20px; }
+                                p { font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0; }
+                                button { background: #059669; color: white; border: none; padding: 14px 24px; border-radius: 14px; font-weight: bold; font-size: 14px; width: 100%; cursor: pointer; transition: all 0.2s; }
+                                button:active { transform: scale(0.97); }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="card">
+                                <h2>🔌 Conectare Copilot</h2>
+                                <p>Asigurați-vă că serverul este pornit pe calculator și telefonul este conectat la aceeași rețea WiFi.</p>
+                                <button onclick="location.reload()">🔄 Reîncearcă Conexiunea</button>
+                            </div>
+                        </body>
+                        </html>
+                    """.trimIndent()
+                    view?.loadDataWithBaseURL(null, htmlError, "text/html", "UTF-8", null)
+                }
+            }
         }
 
         webView.loadUrl(serverUrl)

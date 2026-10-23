@@ -56,6 +56,8 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     private var currentLiveQuestion = "Așteptare conversație din ședință..."
 
     private var webSocket: WebSocket? = null
+    private var isDestroyed = false
+    private var reconnectJob: Job? = null
     private val okHttpClient = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .build()
@@ -329,6 +331,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun initWebSocketConnection() {
+        if (isDestroyed) return
         val wsUrl = backendUrl.replace("http://", "ws://").replace("https://", "wss://") + "/ws/$activeSessionId"
         val request = Request.Builder().url(wsUrl).build()
 
@@ -367,7 +370,27 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
                     Log.w("FloatingBubbleService", "Error parsing WebSocket message", e)
                 }
             }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                scheduleReconnect()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.w("FloatingBubbleService", "WebSocket connection failure, scheduling reconnect", t)
+                scheduleReconnect()
+            }
         })
+    }
+
+    private fun scheduleReconnect() {
+        if (isDestroyed) return
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch(Dispatchers.IO) {
+            delay(3500)
+            if (!isDestroyed) {
+                initWebSocketConnection()
+            }
+        }
     }
 
     private fun triggerBubbleAlert(questionText: String, urgency: Int) {
@@ -415,6 +438,8 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         super.onDestroy()
+        isDestroyed = true
+        reconnectJob?.cancel()
         runCatching { scope.cancel() }
         runCatching { webSocket?.close(1000, "Service stopped") }
         runCatching {

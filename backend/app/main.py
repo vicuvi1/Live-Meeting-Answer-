@@ -116,3 +116,12 @@ async def check_update():
         "apk_download_url": f"https://github.com/{github_repo}/releases/latest",
         "html_url": f"https://github.com/{github_repo}/releases"
     }
+
+# Mount Frontend static build if available (enables single-port complete app)
+import os
+from fastapi.staticfiles import StaticFiles
+
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../frontend/dist"))
+if os.path.exists(frontend_dist):
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+

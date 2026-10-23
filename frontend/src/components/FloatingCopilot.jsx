@@ -37,6 +37,7 @@ export default function FloatingCopilot({
   const [selectedTacticalMode, setSelectedTacticalMode] = useState('agree');
   const [copiedInline, setCopiedInline] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [micNotice, setMicNotice] = useState(null);
 
   const scrollRef = useRef(null);
   const audioServiceRef = useRef(null);
@@ -64,6 +65,7 @@ export default function FloatingCopilot({
         audioServiceRef.current.stopAll();
       }
       setIsMicActive(false);
+      setMicNotice(null);
     } else {
       const service = new AudioService(
         (text, isFinal) => {
@@ -72,7 +74,8 @@ export default function FloatingCopilot({
           }
         },
         (err) => {
-          alert(`Eroare microfon: ${err}`);
+          setMicNotice(err);
+          setTimeout(() => setMicNotice(null), 4500);
           setIsMicActive(false);
         }
       );
@@ -80,6 +83,7 @@ export default function FloatingCopilot({
       if (success) {
         audioServiceRef.current = service;
         setIsMicActive(true);
+        setMicNotice(null);
       }
     }
   };
@@ -178,6 +182,14 @@ export default function FloatingCopilot({
           </button>
         </div>
       </div>
+
+      {/* Mic Warning Notice if microphone is blocked */}
+      {micNotice && (
+        <div className="mb-2.5 p-2.5 rounded-xl bg-amber-950/80 border border-amber-500/50 text-amber-200 text-xs flex items-center justify-between animate-in fade-in">
+          <span>⚠️ {micNotice}</span>
+          <button onClick={() => setMicNotice(null)} className="text-amber-400 font-bold px-1.5 hover:text-amber-200">✕</button>
+        </div>
+      )}
 
       {/* Target Alert Banner (Pulsing when target is called) */}
       {recentAlert && (
@@ -413,7 +425,7 @@ export default function FloatingCopilot({
               {isLoadingAnswer ? 'Generez răspunsul...' : '💡 Deschide Fereastra de Răspuns'}
             </span>
             <span className={`text-[10px] font-normal block opacity-90 ${recentAlert ? 'text-slate-900 font-semibold' : 'text-emerald-100'}`}>
-              Apasă când ești întrebată ceva în ședință
+              Apasă când primești o întrebare în ședință
             </span>
           </div>
         </button>

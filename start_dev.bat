@@ -13,4 +13,5 @@ start cmd /k "cd frontend && npm.cmd run dev"
 echo.
 echo Both services are launching in separate windows!
 echo Open in browser: http://localhost:5173
+echo Or directly on:  http://localhost:8000
 pause

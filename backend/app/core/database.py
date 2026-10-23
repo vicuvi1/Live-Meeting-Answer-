@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import event
+from sqlalchemy import event, text
 from app.core.config import settings
 
 engine = create_async_engine(
@@ -35,9 +35,10 @@ async def init_db():
     """Initializes database tables with WAL mode for zero-lock concurrency."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Enable Write-Ahead-Logging (WAL) mode for maximum concurrency and resilience
+        # Enable Write-Ahead-Logging (WAL) mode and busy timeout for zero-lock concurrency
         try:
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA busy_timeout=30000")
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
+            await conn.execute(text("PRAGMA busy_timeout=30000"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL"))
         except Exception:
             pass
