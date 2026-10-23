@@ -26,7 +26,7 @@ export default function FloatingCopilot({
   onDismissAlert,
   onAddManualTranscript,
   onEndMeeting,
-  targetName = 'Olivia',
+  targetName = 'User',
   onOpenSimulator,
   fontSizeMode = 'normal',
   precomputedAnswer
@@ -179,7 +179,7 @@ export default function FloatingCopilot({
         </div>
       </div>
 
-      {/* Target Alert Banner (Pulsing when Olivia is called) */}
+      {/* Target Alert Banner (Pulsing when target is called) */}
       {recentAlert && (
         <div className="mb-2.5 bg-gradient-to-r from-amber-950/90 via-rose-950/90 to-amber-950/90 border-2 border-amber-400 rounded-2xl p-3 sm:p-4 shadow-xl animate-alert-glow flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
@@ -188,7 +188,7 @@ export default function FloatingCopilot({
             </div>
             <div>
               <h4 className="font-bold text-xs sm:text-sm text-amber-200">
-                Atenție! {targetName} a fost întrebată ceva!
+                Atenție! {targetName} a primit o întrebare!
               </h4>
               <p className="text-[11px] text-amber-300/90 italic line-clamp-1">
                 "{recentAlert.text}"

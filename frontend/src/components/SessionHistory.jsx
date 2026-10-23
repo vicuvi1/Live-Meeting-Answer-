@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 
-export default function SessionHistory({ onResumeSession, targetName = 'Olivia' }) {
+export default function SessionHistory({ onResumeSession, targetName = 'User' }) {
   const [sessions, setSessions] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [transcripts, setTranscripts] = useState([]);

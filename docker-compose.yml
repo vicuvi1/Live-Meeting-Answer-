@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - TARGET_NAME=Olivia
+      - TARGET_NAME=User
       - DEFAULT_LANGUAGE=ro
       - DATABASE_URL=sqlite+aiosqlite:///./data/copilot.db
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

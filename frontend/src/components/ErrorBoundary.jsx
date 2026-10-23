@@ -27,7 +27,7 @@ class ErrorBoundary extends React.Component {
             🛡️
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-amber-400 mb-2">
-            Copilotul Olivia a fost protejat cu succes
+            Copilotul a fost protejat cu succes
           </h1>
           <p className="text-slate-400 max-w-md text-sm leading-relaxed mb-6">
             Aplicația a întâmpinat o nepotrivire de date temporară, dar sistemul anti-crash a oprit blocarea ecranului. Poți continua fără griji.

@@ -8,7 +8,7 @@ from app.services.keyword_detector import detector
 @pytest.mark.asyncio
 async def test_keyword_detector_romanian():
     # Test target detection
-    analysis1 = detector.analyze("Olivia, te rog să ne spui dacă bugetul este aprobat?")
+    analysis1 = detector.analyze("Coleg, te rog să ne spui dacă bugetul este aprobat?", custom_target="Coleg")
     assert analysis1["mentions_target"] is True
     assert analysis1["is_question"] is True
     assert analysis1["urgency"] == 10
@@ -57,7 +57,7 @@ async def test_full_copilot_workflow():
         t2 = await client.post("/api/transcripts", json={
             "session_id": session_id,
             "speaker": "Director",
-            "text": "Olivia, ce părere ai despre termenul de livrare pentru vineri?"
+            "text": "User, ce părere ai despre termenul de livrare pentru vineri?"
         })
         assert t2.status_code == 201
         assert t2.json()["mentions_target"] is True
@@ -66,7 +66,7 @@ async def test_full_copilot_workflow():
         # 4. Trigger Quick Answer ("Ce să răspund?")
         ans_res = await client.post("/api/copilot/quick-answer", json={
             "session_id": session_id,
-            "target_name": "Olivia"
+            "target_name": "User"
         })
         assert ans_res.status_code == 200
         ans_data = ans_res.json()
@@ -94,7 +94,7 @@ async def test_full_copilot_workflow():
         export_res = await client.get(f"/api/sessions/{session_id}/export")
         assert export_res.status_code == 200
         assert "Ședință Test Buget" in export_res.text
-        assert "Olivia" in export_res.text
+        assert "User" in export_res.text
 
         # 8. Test key validation endpoint
         test_key_res = await client.post("/api/copilot/test-key", json={

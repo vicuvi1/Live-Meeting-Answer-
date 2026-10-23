@@ -1,4 +1,4 @@
-# 🎙️ Olivia Meeting Copilot (Live Meeting Assistant)
+# 🎙️ Live Meeting Copilot (Live Meeting Assistant)
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com)
@@ -9,7 +9,7 @@
 > **An ultra-fast, discreet AI Meeting Copilot designed for users juggling dual meetings simultaneously (e.g., in-person and online on Zoom/Google Meet). It transcribes Romanian conversation in real-time, alerts the user when they are called upon, and provides a 1-tap "Lifesaver" button that instantly generates the perfect natural Romanian spoken response.**
 
 <div align="center">
-  <img src="docs/images/app_mockup.jpg" alt="Olivia Meeting Copilot Mockup" width="750" style="border-radius: 16px; margin: 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
+  <img src="docs/images/app_mockup.jpg" alt="Live Meeting Copilot Mockup" width="750" style="border-radius: 16px; margin: 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
 </div>
 
 ---
@@ -17,13 +17,13 @@
 ## 🎯 The Core Problem & Solution
 
 ### The Challenge:
-1. **Dual Meetings:** Olivia is physically in an in-person meeting while also connected to an online meeting (Zoom/Google Meet/Teams) on her phone or laptop.
-2. **The "Single Participant" Rule:** In the online meeting, **there must strictly be ONLY ONE Olivia visible**—no suspicious bots or duplicate accounts in the participant list!
-3. **Immediate Panic Relief:** When someone in the online meeting suddenly asks: *"Olivia, ce părere ai despre termenul de vineri?"*, she needs to know immediately what was asked and have the exact 1–2 sentence professional reply ready to read out loud.
+1. **Dual Meetings:** The user is physically in an in-person meeting while also connected to an online meeting (Zoom/Google Meet/Teams) on their phone or laptop.
+2. **The "Single Participant" Rule:** In the online meeting, **there must strictly be ONLY ONE user account visible**—no suspicious bots or duplicate accounts in the participant list!
+3. **Immediate Panic Relief:** When someone in the online meeting suddenly asks: *"Ce părere ai despre termenul de vineri?"*, the user needs to know immediately what was asked and have the exact 1–2 sentence professional reply ready to read out loud.
 
 ### The Solution:
-- **Discreet Companion Interface:** Runs either on her phone via mobile browser/PWA or as an Android floating overlay bubble directly over Zoom.
-- **Real-Time Romanian STT:** Transcribes the meeting conversation with low latency and highlights when Olivia is addressed.
+- **Discreet Companion Interface:** Runs either on the phone via mobile browser/PWA or as an Android floating overlay bubble directly over Zoom.
+- **Real-Time Romanian STT:** Transcribes the meeting conversation with low latency and highlights when the user is addressed.
 - **💡 "Ce să răspund?" (Lifesaver Button):** Tapping the button feeds the last 3–5 minutes of meeting context to a fast LLM (Gemini 2.5 Flash / Smart Heuristic engine) which formulates a tailored, natural, professional Romanian spoken response in under a second.
 - **Long-Term Meeting Memory:** Stores complete timestamped transcripts, AI answer history, and generates executive summaries and action items.
 
@@ -108,7 +108,7 @@ npm install
 npm run dev
 ```
 
-Open **`http://localhost:5173`** on your computer, or open **`http://<YOUR_COMPUTER_LOCAL_IP>:5173`** directly on Olivia's phone connected to the same WiFi.
+Open **`http://localhost:5173`** on your computer, or open **`http://<YOUR_COMPUTER_LOCAL_IP>:5173`** directly on the phone connected to the same WiFi.
 
 ---
 
@@ -121,11 +121,11 @@ The app comes with an interactive **Romanian Business Meeting Dialogue Simulator
    - *Termen Livrare Proiect & Raport*
    - *Validare Strategie Echipă*
 3. Click **"Redă Automat"** or **"Pasul Următor"**.
-4. Watch the live subtitles roll in Romanian. When the colleague says: *"Olivia, ce părere ai despre estimările de buget?"*, notice:
+4. Watch the live subtitles roll in Romanian. When the colleague says: *"Ce părere ai despre estimările de buget?"*, notice:
    - The line glows in bright amber/gold.
    - The phone gives a subtle vibration alert.
    - The big **"💡 Ce să răspund acum?"** button pulses.
-5. Tap the button—the AI provides the exact natural sentence for Olivia to read out loud!
+5. Tap the button—the AI provides the exact natural sentence for the user to read out loud!
 
 ---
 
@@ -134,7 +134,7 @@ The app comes with an interactive **Romanian Business Meeting Dialogue Simulator
 The repository includes the complete Kotlin Android project inside `/android`:
 - **Floating Chat Head:** Uses `SYSTEM_ALERT_WINDOW` to display a draggable floating icon on top of the native Zoom or Google Meet app.
 - **Audio Service:** Hooks into Android 10+ `AudioPlaybackCaptureConfiguration` via `MediaProjection`.
-- **Zero Zoom Footprint:** Only 1 Olivia appears in the call because the overlay runs locally on the same device.
+- **Zero Zoom Footprint:** Only the real user appears in the call because the overlay runs locally on the same device.
 
 To build the APK:
 1. Open the `/android` folder in **Android Studio**.
@@ -148,7 +148,7 @@ To build the APK:
 Copy `backend/.env.example` to `backend/.env` or configure directly from the in-app **Settings Modal**:
 
 ```ini
-TARGET_NAME=Olivia
+TARGET_NAME=User
 DEFAULT_LANGUAGE=ro
 DATABASE_URL=sqlite+aiosqlite:///./data/copilot.db
 

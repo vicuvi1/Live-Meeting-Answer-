@@ -7,12 +7,12 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-ROMANIAN_COPILOT_SYSTEM_PROMPT = """Ești asistentul personal și copilotul executiv de încredere al Oliviei (sau al utilizatorului indicat).
-Utilizatoarea se află într-o ședință de lucru profesională în limba română (pe Zoom, Google Meet sau Teams).
+ROMANIAN_COPILOT_SYSTEM_PROMPT = """Ești asistentul personal și copilotul executiv de încredere al utilizatorului indicat.
+Utilizatorul se află într-o ședință de lucru profesională în limba română (pe Zoom, Google Meet sau Teams).
 Tocmai i s-a adresat o întrebare sau i s-a cerut părerea/intervenția.
 
 SARCINA TA:
-Analizează transcrierea recentă a conversației din ședință și generează IMEDIAT 3 VARIANTE TACTICE DE RĂSPUNS (exact frazele pe care Olivia să le poată rosti cu voce tare, la persoana I, fără nicio ezitare):
+Analizează transcrierea recentă a conversației din ședință și generează IMEDIAT 3 VARIANTE TACTICE DE RĂSPUNS (exact frazele pe care utilizatorul să le poată rosti cu voce tare, la persoana I, fără nicio ezitare):
 
 1. "agree" (Acord / Susținere):
    - Răspuns afirmativ, profesionist și constructiv. Susține direcția echipei sau confirmă termenul/bugetul.
@@ -71,7 +71,7 @@ class LLMService:
     async def generate_quick_answer(
         self,
         transcript_context: str,
-        target_name: str = "Olivia",
+        target_name: str = "User",
         custom_instruction: Optional[str] = None,
         provider: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -131,7 +131,7 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
             return self._generate_heuristic_response(transcript_context, target_name, start_time)
         except Exception as outer_err:
             logger.critical(f"Unexpected error in LLM service: {outer_err}. Applying ultimate zero-crash fallback.")
-            return self._generate_heuristic_response(transcript_context or "", target_name or "Olivia", start_time)
+            return self._generate_heuristic_response(transcript_context or "", target_name or "User", start_time)
 
     async def _call_openrouter(
         self,
@@ -145,7 +145,7 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
         headers = {
             "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": "https://github.com/vicuvi1/Live-Meeting-Answer-",
-            "X-Title": "Olivia Meeting Copilot",
+            "X-Title": "Live Meeting Copilot",
             "Content-Type": "application/json"
         }
         payload = {
@@ -254,7 +254,7 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "https://github.com/vicuvi1/Live-Meeting-Answer-",
-                "X-Title": "Olivia Meeting Copilot",
+                "X-Title": "Live Meeting Copilot",
                 "Content-Type": "application/json"
             }
             payload = {

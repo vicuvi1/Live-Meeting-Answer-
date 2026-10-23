@@ -1,4 +1,4 @@
-package com.olivia.copilot
+package com.meeting.copilot
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -27,7 +27,7 @@ class AudioCaptureService : Service() {
     companion object {
         var mediaProjection: MediaProjection? = null
         private const val SAMPLE_RATE = 16000
-        private const val CHANNEL_ID = "OliviaAudioCaptureChannel"
+        private const val CHANNEL_ID = "MeetingAudioCaptureChannel"
         private const val NOTIFICATION_ID = 2002
     }
 
@@ -42,7 +42,7 @@ class AudioCaptureService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Olivia Captură Audio",
+                "Meeting Captură Audio",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)

@@ -1,4 +1,4 @@
-package com.olivia.copilot
+package com.meeting.copilot
 
 import android.app.Activity
 import android.content.Context
@@ -44,7 +44,7 @@ object UpdateManager {
             val request = Request.Builder()
                 .url(GITHUB_API_URL)
                 .header("Accept", "application/vnd.github.v3+json")
-                .header("User-Agent", "OliviaCopilot-Android")
+                .header("User-Agent", "MeetingCopilot-Android")
                 .build()
 
             val response = httpClient.newCall(request).execute()
@@ -110,7 +110,7 @@ object UpdateManager {
                             Uri.parse("package:${activity.packageName}")
                         )
                         activity.startActivity(intent)
-                        onError("Te rugăm să permiți 'Instalarea aplicațiilor necunoscute' pentru Olivia Copilot, apoi apasă din nou pe Actualizare.")
+                        onError("Te rugăm să permiți 'Instalarea aplicațiilor necunoscute' pentru Meeting Copilot, apoi apasă din nou pe Actualizare.")
                     }
                     return@withContext
                 }
@@ -118,7 +118,7 @@ object UpdateManager {
 
             val request = Request.Builder()
                 .url(apkUrl)
-                .header("User-Agent", "OliviaCopilot-Android")
+                .header("User-Agent", "MeetingCopilot-Android")
                 .build()
 
             val response = httpClient.newCall(request).execute()
@@ -133,7 +133,7 @@ object UpdateManager {
             if (!updatesDir.exists()) {
                 updatesDir.mkdirs()
             }
-            val apkFile = File(updatesDir, "olivia-copilot-update.apk")
+            val apkFile = File(updatesDir, "meeting-copilot-update.apk")
             if (apkFile.exists()) {
                 apkFile.delete()
             }

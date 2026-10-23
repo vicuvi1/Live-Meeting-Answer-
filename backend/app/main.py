@@ -9,7 +9,7 @@ from app.core.database import init_db
 from app.api import sessions, transcripts, copilot, websocket, subscription
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("olivia_copilot")
+logger = logging.getLogger("meeting_copilot")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Backend engine for Olivia's live meeting assistant and Romanian AI copilot.",
+    description="Backend engine for live meeting assistant and Romanian AI copilot.",
     lifespan=lifespan
 )
 
@@ -77,7 +77,7 @@ async def check_update():
         async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(
                 f"https://api.github.com/repos/{github_repo}/releases/latest",
-                headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "OliviaCopilot"}
+                headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "MeetingCopilot"}
             )
             if resp.status_code == 200:
                 data = resp.json()

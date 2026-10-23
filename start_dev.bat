@@ -1,7 +1,7 @@
 @echo off
-title Olivia Meeting Copilot Launcher
+title Live Meeting Copilot Launcher
 echo ===============================================
-echo   Starting Olivia Meeting Copilot (Live Engine)
+echo   Starting Live Meeting Copilot (Live Engine)
 echo ===============================================
 
 echo [1/2] Starting Backend FastAPI on port 8000...

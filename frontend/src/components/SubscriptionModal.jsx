@@ -111,7 +111,7 @@ export default function SubscriptionModal({ isOpen, onClose, onSubscriptionUpdat
             <Crown className="w-7 h-7 text-slate-950 font-bold" />
           </div>
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
-            <span>Olivia Copilot</span>
+            <span>Meeting Copilot</span>
             <span className="text-amber-400 font-extrabold text-sm uppercase px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/30">
               PRO
             </span>
@@ -246,7 +246,7 @@ export default function SubscriptionModal({ isOpen, onClose, onSubscriptionUpdat
         {/* Romanian Feature Checklist */}
         <div className="mb-6 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2.5">
           <span className="text-xs font-bold text-slate-300 block mb-2">
-            Ce include pachetul complet Olivia Copilot PRO:
+            Ce include pachetul complet Meeting Copilot PRO:
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-300">
             <div className="flex items-center space-x-2">
@@ -259,7 +259,7 @@ export default function SubscriptionModal({ isOpen, onClose, onSubscriptionUpdat
             </div>
             <div className="flex items-center space-x-2">
               <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span>Alertă la numire directă ("Olivia...")</span>
+              <span>Alertă la numire directă sau întrebare</span>
             </div>
             <div className="flex items-center space-x-2">
               <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -281,7 +281,7 @@ export default function SubscriptionModal({ isOpen, onClose, onSubscriptionUpdat
           <form onSubmit={handleActivateVoucher} className="space-y-2">
             <label className="text-xs font-semibold text-slate-400 flex items-center justify-between">
               <span>Ai un cod de activare sau voucher?</span>
-              <span className="text-[10px] text-emerald-400 font-mono">ex: OLIVIA-VIP-2026</span>
+              <span className="text-[10px] text-emerald-400 font-mono">ex: VIP-PRO-2026</span>
             </label>
             <div className="flex space-x-2">
               <input

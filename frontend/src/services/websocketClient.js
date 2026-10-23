@@ -93,7 +93,7 @@ export class WebSocketClient {
     }
   }
 
-  requestQuickAnswer(targetName = 'Olivia') {
+  requestQuickAnswer(targetName = 'User') {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
         type: 'REQUEST_QUICK_ANSWER',

@@ -34,7 +34,7 @@ FORMATUL RĂSPUNSULUI (JSON OBLIGATORIU):
 """
 
 class SummaryService:
-    async def generate_meeting_summary(self, transcript_text: str, target_name: str = "Olivia") -> Dict[str, Any]:
+    async def generate_meeting_summary(self, transcript_text: str, target_name: str = "User") -> Dict[str, Any]:
         """Generates an executive Romanian summary with action items."""
         if not transcript_text or len(transcript_text.strip()) < 20:
             return {

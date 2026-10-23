@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.olivia.copilot"
+    namespace = "com.meeting.copilot"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.olivia.copilot"
+        applicationId = "com.meeting.copilot"
         minSdk = 29 // Android 10+ for AudioPlaybackCapture API
         targetSdk = 34
         versionCode = 1

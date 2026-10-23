@@ -119,7 +119,7 @@ export class AudioService {
     this.isListening = false;
   }
 
-  // Text-To-Speech: Reads the answer in natural Romanian directly to Olivia's earphone
+  // Text-To-Speech: Reads the answer in natural Romanian directly to user's earphone
   static speakRomanian(text) {
     if (!('speechSynthesis' in window) || !text) return;
     try {
@@ -141,7 +141,7 @@ export class AudioService {
     }
   }
 
-  // Device vibration when Olivia's name or question is detected
+  // Device vibration when user's name or question is detected
   static vibrateAlert() {
     try {
       if ('vibrate' in navigator) {
@@ -153,7 +153,7 @@ export class AudioService {
     }
   }
 
-  // Voice whisper / announce: Reads the incoming question directly to Olivia's earphone
+  // Voice whisper / announce: Reads the incoming question directly to user's earphone
   static speakQuestion(questionText) {
     if (!('speechSynthesis' in window) || !questionText) return;
     try {

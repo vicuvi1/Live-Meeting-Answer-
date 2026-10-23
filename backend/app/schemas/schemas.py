@@ -56,7 +56,7 @@ class TacticalCard(BaseModel):
 
 class QuickAnswerRequest(BaseModel):
     session_id: str
-    target_name: Optional[str] = "Olivia"
+    target_name: Optional[str] = "User"
     custom_instruction: Optional[str] = None
     override_context: Optional[str] = None
     provider: Optional[str] = None  # "gemini" | "openrouter"

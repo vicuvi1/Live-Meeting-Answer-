@@ -59,7 +59,7 @@ class KeywordDetector:
         return text.lower().strip()
 
     def check_mentions_target(self, text: str, custom_target: str = None) -> Tuple[bool, str]:
-        """Checks if text mentions the target name directly or honorific (Olivia, doamna Olivia)."""
+        """Checks if text mentions the target name directly or honorific."""
         normalized = self.normalize_text(text)
         stripped = self.strip_diacritics(normalized)
         
@@ -98,10 +98,10 @@ class KeywordDetector:
 
         urgency = 0
         if mentions and is_q:
-            # Direct question in the same sentence: "Olivia, ce părere ai?"
+            # Direct question in the same sentence: "Ce părere ai?"
             urgency = 10
         elif mentions:
-            # Target named: "A vorbit și doamna Olivia despre acest subiect."
+            # Target named: "A vorbit și despre acest subiect."
             urgency = 7
         elif is_q:
             # General meeting question: "Care este termenul limită?"

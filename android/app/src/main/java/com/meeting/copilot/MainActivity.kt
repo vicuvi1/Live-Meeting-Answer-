@@ -1,4 +1,4 @@
-package com.olivia.copilot
+package com.meeting.copilot
 
 import android.Manifest
 import android.content.ComponentName
@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val OVERLAY_PERMISSION_REQ_CODE = 1001
         private const val NOTIFICATION_PERMISSION_REQ_CODE = 1002
-        private const val PREFS_NAME = "OliviaCopilotPrefs"
+        private const val PREFS_NAME = "MeetingCopilotPrefs"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_TARGET_NAME = "target_name"
     }
@@ -72,7 +72,7 @@ class MainActivity : AppCompatActivity() {
 
         // Load saved values or sensible defaults
         val savedUrl = prefs.getString(KEY_SERVER_URL, "http://10.0.2.2:8000")
-        val savedName = prefs.getString(KEY_TARGET_NAME, "Olivia")
+        val savedName = prefs.getString(KEY_TARGET_NAME, "User")
         editServerUrl.setText(savedUrl)
         editTargetName.setText(savedName)
 
@@ -213,7 +213,7 @@ class MainActivity : AppCompatActivity() {
             btnToggle.setText(R.string.btn_stop_overlay)
             btnToggle.setBackgroundColor(ContextCompat.getColor(this, R.color.rose_500))
             isServiceRunning = true
-            Toast.makeText(this, "Bula plutitoare Olivia este acum activă peste Zoom!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Bula plutitoare Copilot este acum activă peste Zoom!", Toast.LENGTH_SHORT).show()
         } else {
             stopService(intent)
             btnToggle.setText(R.string.btn_start_overlay)
@@ -286,7 +286,7 @@ class MainActivity : AppCompatActivity() {
                 val intent = Intent(Settings.ACTION_SETTINGS)
                 startActivity(intent)
             }
-            Toast.makeText(this, "Activează 'Pornire automată' pentru Olivia Copilot", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Activează 'Pornire automată' pentru Meeting Copilot", Toast.LENGTH_LONG).show()
         }
     }
 

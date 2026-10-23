@@ -25,7 +25,7 @@
                 android:id="@+id/cardTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="💡 Răspunsuri Asistent Olivia"
+                android:text="💡 Răspunsuri Asistent Copilot"
                 android:textColor="#10B981"
                 android:textStyle="bold"
                 android:textSize="14sp" />

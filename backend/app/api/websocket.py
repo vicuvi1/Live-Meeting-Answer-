@@ -110,7 +110,7 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                     }
                     await manager.broadcast(session_id, broadcast_payload)
 
-                    # If Olivia is mentioned or high urgency, broadcast alert AND precompute answers in background
+                    # If target name is mentioned or high urgency, broadcast alert AND precompute answers in background
                     if analysis["mentions_target"] or analysis["urgency"] >= 7:
                         await manager.broadcast(session_id, {
                             "type": "TARGET_ALERT",

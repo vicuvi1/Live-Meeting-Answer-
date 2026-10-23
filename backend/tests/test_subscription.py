@@ -20,10 +20,10 @@ async def test_subscription_flow():
         assert trial_data["success"] is True
         assert trial_data["plan_tier"] == "trial"
 
-        # 3. Activate VIP voucher (OLIVIA-VIP-2026)
+        # 3. Activate VIP voucher (VIP-PRO-2026)
         voucher_res = await client.post("/api/subscription/activate-voucher", json={
             "device_id": "test_device_1",
-            "code": "OLIVIA-VIP-2026"
+            "code": "VIP-PRO-2026"
         })
         assert voucher_res.status_code == 200
         voucher_data = voucher_res.json()

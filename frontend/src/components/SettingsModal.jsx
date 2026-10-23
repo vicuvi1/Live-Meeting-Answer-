@@ -35,7 +35,7 @@ export default function SettingsModal({
   onSaveSettings,
   onClose
 }) {
-  const [targetName, setTargetName] = useState(currentSettings.targetName || 'Olivia');
+  const [targetName, setTargetName] = useState(currentSettings.targetName || 'User');
   const [provider, setProvider] = useState(currentSettings.provider || 'gemini');
   
   // Gemini settings
@@ -105,7 +105,7 @@ export default function SettingsModal({
   const handleSubmit = (e) => {
     e.preventDefault();
     onSaveSettings({
-      targetName: targetName.trim() || 'Olivia',
+      targetName: targetName.trim() || 'User',
       provider,
       geminiKey: geminiKey.trim(),
       geminiModel,
@@ -156,7 +156,7 @@ export default function SettingsModal({
               type="text"
               value={targetName}
               onChange={(e) => setTargetName(e.target.value)}
-              placeholder="ex: Olivia"
+              placeholder="ex: Alex / Maria"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -347,7 +347,7 @@ export default function SettingsModal({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Verifică dacă există o versiune nouă a aplicației Olivia Copilot pe GitHub și descarcă actualizarea direct pe telefon.
+                Verifică dacă există o versiune nouă a aplicației Meeting Copilot pe GitHub și descarcă actualizarea direct pe telefon.
               </p>
               
               <button

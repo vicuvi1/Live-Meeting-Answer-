@@ -1,4 +1,4 @@
-package com.olivia.copilot
+package com.meeting.copilot
 
 import android.app.Application
 import android.content.Intent
@@ -9,7 +9,7 @@ import android.util.Log
  * CopilotApplication implements a global Never-Crash UncaughtExceptionHandler.
  * If any unexpected runtime exception escapes the main thread or worker threads,
  * this handler intercepts it, logs the diagnostic trace, and prevents the jarring
- * Android "App has stopped" crash dialog from appearing to Olivia during a live meeting.
+ * Android "App has stopped" crash dialog from appearing to the user during a live meeting.
  */
 class CopilotApplication : Application() {
 

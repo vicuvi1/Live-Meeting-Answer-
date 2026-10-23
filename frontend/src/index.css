@@ -69,7 +69,7 @@ html, body {
   transform: scale(0.97);
 }
 
-/* Glowing alert ring for when Olivia's name is heard */
+/* Glowing alert ring for when target name is heard */
 @keyframes alert-glow {
   0%, 100% {
     box-shadow: 0 0 15px rgba(245, 158, 11, 0.4), 0 0 30px rgba(239, 68, 68, 0.2);

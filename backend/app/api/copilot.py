@@ -25,7 +25,7 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
     """
     Core Lifesaver Button Endpoint:
     Fetches the recent meeting transcript chunk and prompts the AI to produce
-    the exact spoken Romanian response for Olivia to say.
+    the exact spoken Romanian response for the user to say.
     Supports Google Gemini (direct free/paid) and OpenRouter models.
     """
     # Verify session
@@ -46,7 +46,7 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
     segments = list(reversed(res.scalars().all()))
 
     if not segments and not request.override_context:
-        context_text = f"Ședința tocmai a început. Participanții se salută și fac prezența. {request.target_name or 'Olivia'} este prezentă."
+        context_text = f"Ședința tocmai a început. Participanții se salută și fac prezența. {request.target_name or 'User'} este prezent/ă."
     elif request.override_context:
         context_text = request.override_context
     else:

@@ -6,7 +6,7 @@ export default function Header({
   activeTab, 
   setActiveTab, 
   connectionStatus, 
-  targetName = 'Olivia', 
+  targetName = 'User', 
   onOpenSettings,
   onOpenSubscription,
   subscriptionStatus,
@@ -48,7 +48,7 @@ export default function Header({
           <div>
             <div className="flex items-center space-x-1.5">
               <h1 className="font-bold text-sm sm:text-base text-white leading-tight">
-                Olivia Copilot
+                Meeting Copilot
               </h1>
               <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 LIVE

@@ -19,7 +19,7 @@ export default function App() {
   const [isLoadingAnswer, setIsLoadingAnswer] = useState(false);
   const [recentAlert, setRecentAlert] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [fontSizeMode, setFontSizeMode] = useState(localStorage.getItem('olivia_font_size') || 'normal');
+  const [fontSizeMode, setFontSizeMode] = useState(localStorage.getItem('copilot_font_size') || 'normal');
   
   // Modals
   const [showSimulator, setShowSimulator] = useState(false);
@@ -29,13 +29,13 @@ export default function App() {
 
   // Settings
   const [settings, setSettings] = useState({
-    targetName: localStorage.getItem('olivia_target_name') || 'Olivia',
-    provider: localStorage.getItem('olivia_provider') || 'gemini',
-    geminiKey: localStorage.getItem('olivia_gemini_key') || '',
-    geminiModel: localStorage.getItem('olivia_gemini_model') || 'gemini-2.5-flash',
-    openrouterKey: localStorage.getItem('olivia_openrouter_key') || '',
-    openrouterModel: localStorage.getItem('olivia_openrouter_model') || 'google/gemini-2.0-flash-exp:free',
-    deepgramKey: localStorage.getItem('olivia_deepgram_key') || ''
+    targetName: localStorage.getItem('copilot_target_name') || 'User',
+    provider: localStorage.getItem('copilot_provider') || 'gemini',
+    geminiKey: localStorage.getItem('copilot_gemini_key') || '',
+    geminiModel: localStorage.getItem('copilot_gemini_model') || 'gemini-2.5-flash',
+    openrouterKey: localStorage.getItem('copilot_openrouter_key') || '',
+    openrouterModel: localStorage.getItem('copilot_openrouter_model') || 'google/gemini-2.0-flash-exp:free',
+    deepgramKey: localStorage.getItem('copilot_deepgram_key') || ''
   });
 
   const wsClientRef = useRef(null);
@@ -202,20 +202,20 @@ export default function App() {
   // 6. Save Settings
   const handleSaveSettings = (newSettings) => {
     setSettings(newSettings);
-    localStorage.setItem('olivia_target_name', newSettings.targetName);
-    localStorage.setItem('olivia_provider', newSettings.provider);
-    localStorage.setItem('olivia_gemini_key', newSettings.geminiKey);
-    localStorage.setItem('olivia_gemini_model', newSettings.geminiModel);
-    localStorage.setItem('olivia_openrouter_key', newSettings.openrouterKey);
-    localStorage.setItem('olivia_openrouter_model', newSettings.openrouterModel);
-    localStorage.setItem('olivia_deepgram_key', newSettings.deepgramKey);
+    localStorage.setItem('copilot_target_name', newSettings.targetName);
+    localStorage.setItem('copilot_provider', newSettings.provider);
+    localStorage.setItem('copilot_gemini_key', newSettings.geminiKey);
+    localStorage.setItem('copilot_gemini_model', newSettings.geminiModel);
+    localStorage.setItem('copilot_openrouter_key', newSettings.openrouterKey);
+    localStorage.setItem('copilot_openrouter_model', newSettings.openrouterModel);
+    localStorage.setItem('copilot_deepgram_key', newSettings.deepgramKey);
   };
 
-  // 7. Font Scale Toggle (Accessibility for Mom)
+  // 7. Font Scale Toggle (Accessibility)
   const handleToggleFontSize = () => {
     const nextMode = fontSizeMode === 'normal' ? 'large' : fontSizeMode === 'large' ? 'huge' : 'normal';
     setFontSizeMode(nextMode);
-    localStorage.setItem('olivia_font_size', nextMode);
+    localStorage.setItem('copilot_font_size', nextMode);
   };
 
   return (

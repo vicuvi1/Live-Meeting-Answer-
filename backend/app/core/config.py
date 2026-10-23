@@ -1,17 +1,17 @@
-# Core Configuration for Olivia Meeting Copilot
+# Core Configuration for Live Meeting Copilot
 from typing import List, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 import os
 
 class Settings(BaseSettings):
-    APP_NAME: str = "Olivia Meeting Copilot"
+    APP_NAME: str = "Live Meeting Copilot"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     
     # Target / User personalization
-    TARGET_NAME: str = "Olivia"
-    TARGET_ALIASES: List[str] = ["olivia", "oli", "doamna olivia", "doamna oli"]
+    TARGET_NAME: str = "User"
+    TARGET_ALIASES: List[str] = ["user", "utilizator", "coleg", "colega"]
     DEFAULT_LANGUAGE: str = "ro"  # Romanian
     
     # Database

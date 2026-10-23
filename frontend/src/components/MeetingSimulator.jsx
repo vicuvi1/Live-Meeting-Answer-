@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Pause, RotateCcw, X, Sparkles, MessageSquare, FastForward } from 'lucide-react';
 
-const SCENARIOS = [
+const getScenarios = (target) => [
   {
     id: 'budget',
     title: 'Discuție Buget & Resurse (T4)',
@@ -9,7 +9,7 @@ const SCENARIOS = [
       { speaker: 'Director General', text: 'Bună ziua tuturor! Deschidem ședința operativă pe T4.' },
       { speaker: 'Radu (Financiar)', text: 'Am revizuit datele preliminare și avem o depășire minoră pe echipamente.' },
       { speaker: 'Elena (Operațiuni)', text: 'Cred că putem compensa din economiile realizate luna trecută.' },
-      { speaker: 'Director General', text: 'Olivia, ce părere ai despre estimările de buget? Ne încadrăm în parametrii stabiliți inițial?' }
+      { speaker: 'Director General', text: `${target}, ce părere ai despre estimările de buget? Ne încadrăm în parametrii stabiliți inițial?` }
     ]
   },
   {
@@ -18,7 +18,7 @@ const SCENARIOS = [
     lines: [
       { speaker: 'Manager Proiect', text: 'Echipa de audit așteaptă raportul final consolidat.' },
       { speaker: 'Andrei (Tehnic)', text: 'Din punct de vedere tehnic, ultimele verificări s-au încheiat cu succes.' },
-      { speaker: 'Manager Proiect', text: 'Doamna Olivia, vă rugăm să ne confirmați: este fezabil să transmitem documentul finalizat până vineri la ora 12:00?' }
+      { speaker: 'Manager Proiect', text: `${target}, vă rugăm să ne confirmați: este fezabil să transmitem documentul finalizat până vineri la ora 12:00?` }
     ]
   },
   {
@@ -27,21 +27,21 @@ const SCENARIOS = [
     lines: [
       { speaker: 'Mihai', text: 'Propun să simplificăm fluxul de comunicare cu clienții din această săptămână.' },
       { speaker: 'Simona', text: 'Susțin propunerea lui Mihai, economisim cel puțin două ore zilnic.' },
-      { speaker: 'Mihai', text: 'Olivia, tu ce zici? Ești de acord să aplicăm această modificare începând de luni?' }
+      { speaker: 'Mihai', text: `${target}, tu ce zici? Ești de acord să aplicăm această modificare începând de luni?` }
     ]
   }
 ];
 
-export default function MeetingSimulator({ onInjectTranscript, onClose, targetName = 'Olivia' }) {
-  const [selectedScenario, setSelectedScenario] = useState(SCENARIOS[0]);
+export default function MeetingSimulator({ onInjectTranscript, onClose, targetName = 'User' }) {
+  const scenarios = getScenarios(targetName);
+  const [selectedScenarioIndex, setSelectedScenarioIndex] = useState(0);
+  const selectedScenario = scenarios[selectedScenarioIndex] || scenarios[0];
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [timerId, setTimerId] = useState(null);
 
   const injectLine = (line) => {
-    // Replace 'Olivia' with targetName if customized
-    const text = line.text.replace(/Olivia/g, targetName);
-    onInjectTranscript(text, line.speaker, true);
+    onInjectTranscript(line.text, line.speaker, true);
   };
 
   const handleNextStep = () => {
@@ -81,9 +81,9 @@ export default function MeetingSimulator({ onInjectTranscript, onClose, targetNa
     setCurrentLineIndex(0);
   };
 
-  const handleSelectScenario = (sc) => {
+  const handleSelectScenario = (index) => {
     handleReset();
-    setSelectedScenario(sc);
+    setSelectedScenarioIndex(index);
   };
 
   return (
@@ -117,10 +117,10 @@ export default function MeetingSimulator({ onInjectTranscript, onClose, targetNa
         <div className="mb-4">
           <label className="text-xs font-semibold text-slate-400 block mb-2">Alege un scenariu de test:</label>
           <div className="grid grid-cols-1 gap-2">
-            {SCENARIOS.map(sc => (
+            {scenarios.map((sc, scIdx) => (
               <button
                 key={sc.id}
-                onClick={() => handleSelectScenario(sc)}
+                onClick={() => handleSelectScenario(scIdx)}
                 className={`text-left p-3 rounded-xl border text-xs transition ${
                   selectedScenario.id === sc.id
                     ? 'bg-purple-950/60 border-purple-500 text-purple-200 font-semibold'
@@ -139,7 +139,7 @@ export default function MeetingSimulator({ onInjectTranscript, onClose, targetNa
           {selectedScenario.lines.map((line, idx) => {
             const isDelivered = idx < currentLineIndex;
             const isNext = idx === currentLineIndex;
-            const mentionsTarget = line.text.includes('Olivia') || line.text.includes(targetName);
+            const mentionsTarget = line.text.includes(targetName);
 
             return (
               <div 

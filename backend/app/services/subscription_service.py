@@ -14,7 +14,7 @@ PLANS_INFO = {
         "duration_days": 0,
         "features": [
             "Transcriere de bază (până la 30 min/ședință)",
-            "Detectare întrebări țintă (Olivia)",
+            "Detectare întrebări adresate ție",
             "Istoric ultimele 3 ședințe"
         ]
     },
@@ -75,10 +75,10 @@ PLANS_INFO = {
 
 # Verified Romanian Activation / Voucher Codes
 PROMO_CODES = {
-    "OLIVIA-VIP-2026": {
+    "VIP-PRO-2026": {
         "plan": "lifetime_vip",
         "days": 9999,
-        "message": "Felicitări! Ai activat accesul VIP Nelimitat pentru Olivia."
+        "message": "Felicitări! Ai activat accesul VIP Nelimitat."
     },
     "ROMANIA-PRO-30": {
         "plan": "pro_monthly",
@@ -142,11 +142,11 @@ class SubscriptionService:
         clean_code = code.strip().upper()
         if clean_code not in PROMO_CODES:
             # Check generic VIP pattern
-            if clean_code.startswith("OLIVIA-") and len(clean_code) >= 12:
+            if (clean_code.startswith("VIP-") or clean_code.startswith("PRO-")) and len(clean_code) >= 10:
                 promo_data = {
                     "plan": "lifetime_vip",
                     "days": 9999,
-                    "message": "Licență oficială Olivia validată cu succes!"
+                    "message": "Licență oficială VIP validată cu succes!"
                 }
             else:
                 return {

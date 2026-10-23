@@ -1,4 +1,4 @@
-package com.olivia.copilot
+package com.meeting.copilot
 
 import android.animation.ValueAnimator
 import android.app.Notification
@@ -45,7 +45,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     private var screenWidth = 1080
 
     private var backendUrl = "http://10.0.2.2:8000"
-    private var targetName = "Olivia"
+    private var targetName = "User"
     private var activeSessionId = "default-session"
 
     // Tactical responses cache
@@ -62,7 +62,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
     companion object {
         private const val NOTIFICATION_ID = 2001
-        private const val CHANNEL_ID = "OliviaCopilotOverlayChannel"
+        private const val CHANNEL_ID = "MeetingCopilotOverlayChannel"
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -116,7 +116,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Olivia Copilot Overlay",
+                "Meeting Copilot Overlay",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)
@@ -124,7 +124,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         }
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Bula Olivia este activă peste Zoom")
+            .setContentTitle("Bula Copilot este activă peste Zoom")
             .setContentText("Atinge bula pentru răspunsul AI instant în ședință.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .build()
@@ -275,7 +275,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
             btnCopy?.setOnClickListener {
                 runCatching {
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("Raspuns Olivia", currentSelectedText)
+                    val clip = ClipData.newPlainText("Raspuns Copilot", currentSelectedText)
                     clipboard.setPrimaryClip(clip)
                     Toast.makeText(this, "Copiat în memorie!", Toast.LENGTH_SHORT).show()
                 }
@@ -284,7 +284,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
             btnSpeak?.setOnClickListener {
                 runCatching {
                     if (isTtsReady) {
-                        tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
+                        tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "CopilotTTS")
                     }
                 }
             }

@@ -145,7 +145,7 @@ async def export_session_markdown(session_id: str, db: AsyncSession = Depends(ge
         md.append(session.action_items + "\n")
 
     if session.answers:
-        md.append("## Răspunsuri Sugerate de Copilot (Olivia)")
+        md.append("## Răspunsuri Sugerate de Copilot")
         for ans in session.answers:
             md.append(f"- **[{ans.generated_at.strftime('%H:%M:%S')}] Întrebare:** {ans.question_detected}")
             md.append(f"  - **Răspuns sugerat:** *\"{ans.spoken_response}\"*")

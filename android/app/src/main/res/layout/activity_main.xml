@@ -15,7 +15,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Olivia Copilot"
+            android:text="Meeting Copilot"
             android:textColor="@color/text_white"
             android:textSize="26sp"
             android:textStyle="bold"
@@ -88,7 +88,7 @@
                     android:textColor="@color/text_white"
                     android:padding="10dp"
                     android:textSize="13sp"
-                    android:text="Olivia"
+                    android:text="User"
                     android:inputType="textPersonName"
                     android:layout_marginBottom="12dp"/>
 
@@ -343,7 +343,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="1. Apeși butonul verde de mai jos pentru a lansa bula.\n2. Deschizi Zoom sau Google Meet și participi normal (doar o singură Olivia apare în apel!).\n3. Bula vibrează și luminează în galben când ești întrebată ceva.\n4. O atingi și ai instant cele 3 răspunsuri: Da, Scuză Mute, sau Prudență."
+                    android:text="1. Apeși butonul verde de mai jos pentru a lansa bula.\n2. Deschizi Zoom sau Google Meet și participi normal (fără roboți sau conturi secundare în apel!).\n3. Bula vibrează și luminează în galben când primești o întrebare.\n4. O atingi și ai instant cele 3 răspunsuri: Da, Scuză Mute, sau Prudență."
                     android:textColor="@color/text_muted"
                     android:textSize="12sp"
                     android:lineSpacingExtra="3dp"/>

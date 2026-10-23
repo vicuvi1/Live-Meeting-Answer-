@@ -1,6 +1,6 @@
-# Olivia Meeting Copilot — One-Click Dev Launcher
+# Live Meeting Copilot — One-Click Dev Launcher
 Write-Host "===============================================" -ForegroundColor Green
-Write-Host "  Starting Olivia Meeting Copilot (Live Engine) " -ForegroundColor Cyan
+Write-Host "  Starting Live Meeting Copilot (Live Engine) " -ForegroundColor Cyan
 Write-Host "===============================================" -ForegroundColor Green
 
 # 1. Start Backend FastAPI

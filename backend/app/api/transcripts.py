@@ -29,7 +29,7 @@ async def get_transcripts_for_session(
 
 @router.post("", response_model=TranscriptOut, status_code=status.HTTP_201_CREATED)
 async def add_transcript_segment(data: TranscriptCreate, db: AsyncSession = Depends(get_db)):
-    """Appends a new transcript line and analyzes it for keyword mentions (e.g. Olivia)."""
+    """Appends a new transcript line and analyzes it for keyword mentions or target name."""
     # Verify session exists
     session_q = select(MeetingSession).where(MeetingSession.id == data.session_id)
     session_res = await db.execute(session_q)

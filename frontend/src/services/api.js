@@ -90,7 +90,7 @@ export const api = {
   // Copilot Quick Answer
   async getQuickAnswer(
     sessionId, 
-    targetName = 'Olivia', 
+    targetName = 'User', 
     customInstruction = null,
     provider = null,
     apiKey = null,
