@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.webkit.*
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -64,13 +65,24 @@ class FullScreenActivity : AppCompatActivity() {
         }
 
         webView.loadUrl(serverUrl)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    finish()
+                }
+            }
+        })
     }
 
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
+    override fun onDestroy() {
+        super.onDestroy()
+        runCatching {
+            webView.stopLoading()
+            webView.destroy()
         }
     }
 }

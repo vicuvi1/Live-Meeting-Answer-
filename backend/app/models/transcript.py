@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Float, Boolean, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.datetime_utils import utc_now
 
 class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
@@ -13,7 +14,7 @@ class TranscriptSegment(Base):
     speaker = Column(String(100), default="Participant", nullable=False)
     text = Column(Text, nullable=False)
     
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=utc_now, nullable=False, index=True)
     relative_seconds = Column(Float, default=0.0)
     
     is_final = Column(Boolean, default=True)

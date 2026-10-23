@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Integer, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.datetime_utils import utc_now
 
 class AiAnswer(Base):
     __tablename__ = "ai_answers"
@@ -18,7 +19,7 @@ class AiAnswer(Base):
     
     llm_model = Column(String(50), default="gemini-2.5-flash")
     latency_ms = Column(Integer, default=0)
-    generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    generated_at = Column(DateTime, default=utc_now, nullable=False)
     
     feedback = Column(String(20), nullable=True)     # "used", "dismissed", "helpful"
 

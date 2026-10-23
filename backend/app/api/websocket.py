@@ -12,6 +12,7 @@ from app.models.answer import AiAnswer
 from app.services.keyword_detector import detector
 from app.services.llm_service import llm_service
 from app.core.config import settings
+from app.core.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +41,14 @@ class ConnectionManager:
         if session_id in self.active_connections:
             serialized = json.dumps(message, ensure_ascii=False)
             dead_connections = set()
-            for connection in self.active_connections[session_id]:
+            for connection in list(self.active_connections.get(session_id, [])):
                 try:
                     await connection.send_text(serialized)
                 except Exception:
                     dead_connections.add(connection)
             for dead in dead_connections:
-                self.active_connections[session_id].discard(dead)
+                if session_id in self.active_connections:
+                    self.active_connections[session_id].discard(dead)
 
 manager = ConnectionManager()
 
@@ -88,7 +90,7 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                         is_final=is_final,
                         mentions_target=analysis["mentions_target"],
                         is_question=analysis["is_question"],
-                        timestamp=datetime.utcnow()
+                        timestamp=utc_now()
                     )
                     db.add(segment)
                     await db.commit()
@@ -145,12 +147,13 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                                         "talking_points": ai_spec["talking_points"],
                                         "tactical_responses": ai_spec.get("tactical_responses"),
                                         "latency_ms": ai_spec.get("latency_ms", 0),
-                                        "generated_at": datetime.utcnow().strftime("%H:%M:%S")
+                                        "generated_at": utc_now().strftime("%H:%M:%S")
                                     })
                             except Exception as err:
                                 logger.warning(f"Speculative pre-computation error: {err}")
 
-                        asyncio.create_task(precompute_speculative_answers(session_id, settings.TARGET_NAME))
+                        resolved_target = msg.get("target_name") or settings.TARGET_NAME
+                        asyncio.create_task(precompute_speculative_answers(session_id, resolved_target))
 
             # 3. Direct Request for Quick Answer
             elif msg_type == "REQUEST_QUICK_ANSWER":

@@ -48,6 +48,15 @@ export default function FloatingCopilot({
     }
   }, [transcripts]);
 
+  // Cleanup microphone on tab switch or unmount
+  useEffect(() => {
+    return () => {
+      if (audioServiceRef.current) {
+        audioServiceRef.current.stopAll();
+      }
+    };
+  }, []);
+
   // Audio Service Setup for Romanian live speech
   const toggleMicrophone = () => {
     if (isMicActive) {
@@ -108,7 +117,13 @@ export default function FloatingCopilot({
   const currentInlineCard = tactical[selectedTacticalMode] || tactical.agree;
 
   const handleInlineCopy = () => {
-    navigator.clipboard.writeText(currentInlineCard.spoken_response);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(currentInlineCard.spoken_response);
+      }
+    } catch (e) {
+      console.warn('Clipboard write error:', e);
+    }
     setCopiedInline(true);
     setTimeout(() => setCopiedInline(false), 2000);
   };

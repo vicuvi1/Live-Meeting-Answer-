@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Integer, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.datetime_utils import utc_now
 
 class MeetingSession(Base):
     __tablename__ = "meeting_sessions"
@@ -12,7 +13,7 @@ class MeetingSession(Base):
     language = Column(String(10), default="ro")
     status = Column(String(20), default="active")  # active, completed, paused
     
-    start_time = Column(DateTime, default=datetime.utcnow, nullable=False)
+    start_time = Column(DateTime, default=utc_now, nullable=False)
     end_time = Column(DateTime, nullable=True)
     duration_seconds = Column(Integer, default=0)
     

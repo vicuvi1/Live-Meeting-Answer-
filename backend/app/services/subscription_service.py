@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.subscription import Subscription
+from app.core.datetime_utils import utc_now
 
 # Standard Romanian Corporate & Consumer Pricing in RON (LEI)
 PLANS_INFO = {
@@ -105,7 +106,7 @@ class SubscriptionService:
                 status="active",
                 price_ron=0.0,
                 currency="RON",
-                started_at=datetime.utcnow(),
+                started_at=utc_now(),
                 expires_at=None,
                 unlimited_ai=False,
                 unlimited_transcripts=False
@@ -166,7 +167,7 @@ class SubscriptionService:
         if promo_data["days"] >= 9000:
             sub.expires_at = None
         else:
-            sub.expires_at = datetime.utcnow() + timedelta(days=promo_data["days"])
+            sub.expires_at = utc_now() + timedelta(days=promo_data["days"])
 
         await db.commit()
         await db.refresh(sub)
@@ -189,7 +190,7 @@ class SubscriptionService:
         trial_duration = timedelta(days=7)
         sub.plan_tier = "trial"
         sub.status = "active"
-        sub.trial_ends_at = datetime.utcnow() + trial_duration
+        sub.trial_ends_at = utc_now() + trial_duration
         sub.expires_at = sub.trial_ends_at
         sub.unlimited_ai = True
         sub.unlimited_transcripts = True
@@ -218,7 +219,7 @@ class SubscriptionService:
         sub.plan_tier = plan_type
         sub.status = "active"
         sub.price_ron = meta["price_ron"]
-        sub.expires_at = datetime.utcnow() + timedelta(days=meta["duration_days"])
+        sub.expires_at = utc_now() + timedelta(days=meta["duration_days"])
         sub.unlimited_ai = True
         sub.unlimited_transcripts = True
 

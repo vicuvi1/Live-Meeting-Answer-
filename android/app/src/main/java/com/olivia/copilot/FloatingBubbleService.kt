@@ -35,6 +35,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
     private var bubbleView: View? = null
     private var cardView: View? = null
     private var tts: TextToSpeech? = null
+    private var isTtsReady = false
     private val scope = CoroutineScope(Dispatchers.Main + Job())
 
     private var initialX = 0
@@ -81,12 +82,21 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         tts = TextToSpeech(this, this)
         measureScreen()
-        initBubbleOverlay()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Settings.canDrawOverlays(this)) {
+                initBubbleOverlay()
+            } else {
+                Log.w("FloatingBubbleService", "Overlay permission not granted; skipping initBubbleOverlay")
+            }
+        } else {
+            initBubbleOverlay()
+        }
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            tts?.language = Locale("ro", "RO")
+            val result = tts?.setLanguage(Locale("ro", "RO"))
+            isTtsReady = (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED)
         }
     }
 
@@ -273,7 +283,9 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
 
             btnSpeak?.setOnClickListener {
                 runCatching {
-                    tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
+                    if (isTtsReady) {
+                        tts?.speak(currentSelectedText, TextToSpeech.QUEUE_FLUSH, null, "OliviaTTS")
+                    }
                 }
             }
 
@@ -366,7 +378,7 @@ class FloatingBubbleService : Service(), TextToSpeech.OnInitListener {
                 vibrateAlert()
 
                 // Say to user question (voice whisper in ear / speaker)
-                if (urgency >= 7 && questionText.isNotBlank()) {
+                if (urgency >= 7 && questionText.isNotBlank() && isTtsReady) {
                     tts?.speak("Întrebare: $questionText", TextToSpeech.QUEUE_FLUSH, null, "QuestionTTS")
                 }
 

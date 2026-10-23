@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.datetime_utils import utc_now
 from app.models.session import MeetingSession
 from app.models.transcript import TranscriptSegment
 from app.models.answer import AiAnswer
@@ -63,7 +64,7 @@ async def update_session(session_id: str, data: SessionUpdate, db: AsyncSession 
     if data.status is not None:
         session.status = data.status
         if data.status == "completed" and not session.end_time:
-            session.end_time = datetime.utcnow()
+            session.end_time = utc_now()
             diff = (session.end_time - session.start_time).total_seconds()
             session.duration_seconds = max(0, int(diff))
     if data.summary is not None:

@@ -121,45 +121,59 @@ export class AudioService {
 
   // Text-To-Speech: Reads the answer in natural Romanian directly to Olivia's earphone
   static speakRomanian(text) {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel(); // Stop any ongoing speech
+    if (!('speechSynthesis' in window) || !text) return;
+    try {
+      window.speechSynthesis.cancel(); // Stop any ongoing speech
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ro-RO';
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ro-RO';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
 
-    // Try finding a Romanian voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const roVoice = voices.find(v => v.lang.startsWith('ro'));
-    if (roVoice) utterance.voice = roVoice;
+      // Try finding a Romanian voice if available
+      const voices = window.speechSynthesis.getVoices();
+      const roVoice = voices.find(v => v.lang.startsWith('ro'));
+      if (roVoice) utterance.voice = roVoice;
 
-    window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis notice:', e);
+    }
   }
 
   // Device vibration when Olivia's name or question is detected
   static vibrateAlert() {
-    if ('vibrate' in navigator) {
-      // Vibrate pattern: 250ms pulse, 150ms pause, 250ms pulse, 150ms pause, 450ms attention pulse
-      navigator.vibrate([250, 150, 250, 150, 450]);
+    try {
+      if ('vibrate' in navigator) {
+        // Vibrate pattern: 250ms pulse, 150ms pause, 250ms pulse, 150ms pause, 450ms attention pulse
+        navigator.vibrate([250, 150, 250, 150, 450]);
+      }
+    } catch (e) {
+      // Ignored if device does not support or permission denied
     }
   }
 
   // Voice whisper / announce: Reads the incoming question directly to Olivia's earphone
   static speakQuestion(questionText) {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+    if (!('speechSynthesis' in window) || !questionText) return;
+    try {
+      window.speechSynthesis.cancel();
 
-    const clean = questionText.replace(/^["']|["']$/g, '').trim();
-    const utterance = new SpeechSynthesisUtterance(`Întrebare: ${clean}`);
-    utterance.lang = 'ro-RO';
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
+      const clean = questionText.replace(/^["']|["']$/g, '').trim();
+      if (!clean) return;
 
-    const voices = window.speechSynthesis.getVoices();
-    const roVoice = voices.find(v => v.lang.startsWith('ro'));
-    if (roVoice) utterance.voice = roVoice;
+      const utterance = new SpeechSynthesisUtterance(`Întrebare: ${clean}`);
+      utterance.lang = 'ro-RO';
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
 
-    window.speechSynthesis.speak(utterance);
+      const voices = window.speechSynthesis.getVoices();
+      const roVoice = voices.find(v => v.lang.startsWith('ro'));
+      if (roVoice) utterance.voice = roVoice;
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis question notice:', e);
+    }
   }
 }

@@ -138,26 +138,25 @@ object UpdateManager {
                 apkFile.delete()
             }
 
-            val inputStream = responseBody.byteStream()
-            val outputStream = FileOutputStream(apkFile)
-            val buffer = ByteArray(8 * 1024)
-            var bytesRead: Int
-            var downloadedBytes = 0L
+            responseBody.byteStream().use { inputStream ->
+                FileOutputStream(apkFile).use { outputStream ->
+                    val buffer = ByteArray(8 * 1024)
+                    var bytesRead: Int
+                    var downloadedBytes = 0L
 
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                downloadedBytes += bytesRead
-                if (totalBytes > 0) {
-                    val progress = ((downloadedBytes * 100) / totalBytes).toInt()
-                    withContext(Dispatchers.Main) {
-                        onProgress(progress)
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+                        if (totalBytes > 0) {
+                            val progress = ((downloadedBytes * 100) / totalBytes).toInt()
+                            withContext(Dispatchers.Main) {
+                                onProgress(progress)
+                            }
+                        }
                     }
+                    outputStream.flush()
                 }
             }
-
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
 
             // Trigger Android Package Installer
             withContext(Dispatchers.Main) {

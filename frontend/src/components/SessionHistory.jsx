@@ -62,7 +62,7 @@ export default function SessionHistory({ onResumeSession, targetName = 'Olivia' 
       setSelectedSession(prev => ({
         ...prev,
         summary: res.summary,
-        action_items: res.action_items.join('\n')
+        action_items: Array.isArray(res.action_items) ? res.action_items.join('\n') : (res.action_items || '')
       }));
       // update list
       loadSessions();
@@ -85,6 +85,7 @@ export default function SessionHistory({ onResumeSession, targetName = 'Olivia' 
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (err) {
       alert(`Eroare export: ${err.message}`);
     }

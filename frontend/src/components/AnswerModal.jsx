@@ -19,7 +19,7 @@ export default function AnswerModal({ answer, onClose, onFeedback }) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   // Tactical mode: 'agree' | 'stall' | 'caution'
-  const [selectedMode, setSelectedMode] = useState(answer.initialMode || 'agree');
+  const [selectedMode, setSelectedMode] = useState(answer?.initialMode || 'agree');
 
   if (!answer) return null;
 
@@ -45,7 +45,13 @@ export default function AnswerModal({ answer, onClose, onFeedback }) {
   const currentCard = tactical[selectedMode] || tactical.agree;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(currentCard.spoken_response);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(currentCard.spoken_response);
+      }
+    } catch (e) {
+      console.warn('Clipboard write error:', e);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

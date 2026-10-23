@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 from sqlalchemy import Column, String, DateTime, Boolean, Float
 from app.core.database import Base
+from app.core.datetime_utils import utc_now
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
@@ -17,7 +18,7 @@ class Subscription(Base):
     price_ron = Column(Float, default=0.0)
     currency = Column(String(10), default="RON")
     
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, default=utc_now, nullable=False)
     expires_at = Column(DateTime, nullable=True)
     trial_ends_at = Column(DateTime, nullable=True)
     
@@ -35,7 +36,7 @@ class Subscription(Base):
             return True
         if self.status != "active":
             return False
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < utc_now():
             return False
         if self.plan_tier in ["pro_monthly", "pro_yearly", "lifetime_vip", "trial"]:
             return True
@@ -48,5 +49,5 @@ class Subscription(Base):
         target = self.expires_at or self.trial_ends_at
         if not target:
             return 0
-        diff = (target - datetime.utcnow()).days
+        diff = (target - utc_now()).days
         return max(0, diff)

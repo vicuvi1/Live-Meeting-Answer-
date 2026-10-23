@@ -60,7 +60,15 @@ class SummaryService:
                         temperature=0.2
                     )
                 )
-                return json.loads(response.text)
+                raw_text = (response.text or "{}").strip()
+                if raw_text.startswith("```"):
+                    parts = raw_text.split("```")
+                    if len(parts) >= 2:
+                        raw_text = parts[1]
+                        if raw_text.startswith("json"):
+                            raw_text = raw_text[4:]
+                raw_text = raw_text.strip()
+                return json.loads(raw_text)
             except Exception as e:
                 logger.error(f"Error calling Gemini for summary: {e}")
 

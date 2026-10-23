@@ -216,7 +216,15 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
         )
         
         latency = int((time.time() - start_time) * 1000)
-        parsed = json.loads(response.text)
+        raw_text = (response.text or "{}").strip()
+        if raw_text.startswith("```"):
+            parts = raw_text.split("```")
+            if len(parts) >= 2:
+                raw_text = parts[1]
+                if raw_text.startswith("json"):
+                    raw_text = raw_text[4:]
+        raw_text = raw_text.strip()
+        parsed = json.loads(raw_text)
         
         tactical = parsed.get("tactical_responses", {})
         default_spoken = parsed.get("spoken_response") or (tactical.get("agree", {}).get("spoken_response", "Sunt de acord cu planul prezentat și putem merge mai departe."))
