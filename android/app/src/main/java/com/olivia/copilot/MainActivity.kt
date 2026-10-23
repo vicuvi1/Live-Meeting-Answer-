@@ -1,6 +1,7 @@
 package com.olivia.copilot
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -8,7 +9,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -63,6 +66,9 @@ class MainActivity : AppCompatActivity() {
 
         // Check Notification Permission on Android 13+
         checkNotificationPermission()
+
+        // Setup Xiaomi HyperOS specific permission helpers
+        setupXiaomiHyperOSHelpers()
 
         btnOpenFullscreen.setOnClickListener {
             savePreferences()
@@ -186,6 +192,74 @@ class MainActivity : AppCompatActivity() {
             btnToggle.setText(R.string.btn_start_overlay)
             btnToggle.setBackgroundColor(ContextCompat.getColor(this, R.color.emerald_600))
             isServiceRunning = false
+        }
+    }
+
+    private fun setupXiaomiHyperOSHelpers() {
+        val btnXiaomiPopup = findViewById<Button?>(R.id.btnXiaomiPopup)
+        val btnXiaomiBattery = findViewById<Button?>(R.id.btnXiaomiBattery)
+        val btnXiaomiAutostart = findViewById<Button?>(R.id.btnXiaomiAutostart)
+        val cardXiaomi = findViewById<View?>(R.id.cardXiaomiSettings)
+
+        // Highlight if Xiaomi / Redmi / POCO
+        val isXiaomi = Build.MANUFACTURER.contains("Xiaomi", ignoreCase = true) ||
+                       Build.MANUFACTURER.contains("Redmi", ignoreCase = true) ||
+                       Build.MANUFACTURER.contains("POCO", ignoreCase = true)
+
+        if (cardXiaomi != null) {
+            cardXiaomi.visibility = View.VISIBLE
+        }
+
+        // 1. Xiaomi "Display pop-up windows while running in the background"
+        btnXiaomiPopup?.setOnClickListener {
+            try {
+                val intent = Intent("miui.intent.action.APP_PERM_EDITOR").apply {
+                    setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                    putExtra("extra_pkgname", packageName)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                // Fallback to standard App Details
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+            Toast.makeText(this, "Activează 'Afișează ferestre pop-up în fundal'", Toast.LENGTH_LONG).show()
+        }
+
+        // 2. Battery Saver -> No Restrictions (Fără restricții)
+        btnXiaomiBattery?.setOnClickListener {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                    } else {
+                        Toast.makeText(this, "Bateria este deja configurată pe 'Fără Restricții'!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                startActivity(intent)
+            }
+        }
+
+        // 3. Xiaomi Autostart Manager
+        btnXiaomiAutostart?.setOnClickListener {
+            try {
+                val intent = Intent().apply {
+                    component = ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                val intent = Intent(Settings.ACTION_SETTINGS)
+                startActivity(intent)
+            }
+            Toast.makeText(this, "Activează 'Pornire automată' pentru Olivia Copilot", Toast.LENGTH_LONG).show()
         }
     }
 

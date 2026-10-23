@@ -5,6 +5,19 @@
 :root {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  /* Safe area insets for modern Xiaomi punch-hole camera and gestures */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* 120Hz/144Hz Smooth Scrolling & AMOLED True Blacks */
+html, body {
+  scroll-behavior: smooth;
+  background-color: #030712; /* Deep AMOLED true black for Xiaomi 15T Pro */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Font Size Accessibility Scales for Mom */
