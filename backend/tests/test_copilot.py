@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from app.main import app
-from app.core.database import init_db
+from app.core.database import init_db, engine, Base
 from app.services.keyword_detector import detector
 
 @pytest.mark.asyncio
@@ -27,7 +27,9 @@ async def test_keyword_detector_romanian():
 
 @pytest.mark.asyncio
 async def test_full_copilot_workflow():
-    await init_db()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
     
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -72,6 +74,10 @@ async def test_full_copilot_workflow():
         assert len(ans_data["spoken_response"]) > 5
         assert "question_detected" in ans_data
         assert isinstance(ans_data["talking_points"], list)
+        assert "tactical_responses" in ans_data
+        assert "agree" in ans_data["tactical_responses"]
+        assert "stall" in ans_data["tactical_responses"]
+        assert "caution" in ans_data["tactical_responses"]
 
         # 5. Record feedback
         feedback_res = await client.post(f"/api/copilot/answers/{ans_data['id']}/feedback", json={

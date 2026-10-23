@@ -60,6 +60,7 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
         question_detected=ai_result["question_detected"],
         spoken_response=ai_result["spoken_response"],
         talking_points=json.dumps(ai_result["talking_points"], ensure_ascii=False),
+        tactical_responses=json.dumps(ai_result.get("tactical_responses", {}), ensure_ascii=False),
         context_used=context_text,
         llm_model=ai_result.get("model_used", "gemini-2.5-flash"),
         latency_ms=ai_result.get("latency_ms", 0)
@@ -74,6 +75,7 @@ async def generate_quick_answer(request: QuickAnswerRequest, db: AsyncSession = 
         question_detected=answer_record.question_detected,
         spoken_response=answer_record.spoken_response,
         talking_points=ai_result["talking_points"],
+        tactical_responses=ai_result.get("tactical_responses"),
         latency_ms=answer_record.latency_ms,
         generated_at=answer_record.generated_at,
         model_used=answer_record.llm_model
@@ -93,6 +95,7 @@ async def get_answers_for_session(session_id: str, db: AsyncSession = Depends(ge
             "question_detected": a.question_detected,
             "spoken_response": a.spoken_response,
             "talking_points": json.loads(a.talking_points) if a.talking_points else [],
+            "tactical_responses": json.loads(a.tactical_responses) if a.tactical_responses else None,
             "latency_ms": a.latency_ms,
             "generated_at": a.generated_at,
             "feedback": a.feedback

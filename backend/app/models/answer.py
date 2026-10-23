@@ -11,8 +11,9 @@ class AiAnswer(Base):
     session_id = Column(String(36), ForeignKey("meeting_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     question_detected = Column(Text, nullable=False)
-    spoken_response = Column(Text, nullable=False)  # Exact Romanian words for Olivia to say
+    spoken_response = Column(Text, nullable=False)  # Default / recommended phrase
     talking_points = Column(Text, nullable=True)     # JSON array or bullet points
+    tactical_responses = Column(Text, nullable=True) # JSON with agree, stall, caution cards
     context_used = Column(Text, nullable=True)       # The transcript snapshot fed to the LLM
     
     llm_model = Column(String(50), default="gemini-2.5-flash")

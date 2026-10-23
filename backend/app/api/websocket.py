@@ -108,14 +108,49 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                     }
                     await manager.broadcast(session_id, broadcast_payload)
 
-                    # If Olivia is mentioned, broadcast a high-urgency vibration/alert
-                    if analysis["mentions_target"]:
+                    # If Olivia is mentioned or high urgency, broadcast alert AND precompute answers in background
+                    if analysis["mentions_target"] or analysis["urgency"] >= 7:
                         await manager.broadcast(session_id, {
                             "type": "TARGET_ALERT",
                             "speaker": speaker,
                             "text": text,
                             "urgency": analysis["urgency"]
                         })
+
+                        # Zero-Latency Speculative Pre-computation:
+                        # Asynchronously draft the 3 tactical answers so they are ready before she taps the button!
+                        import asyncio
+                        async def precompute_speculative_answers(sess_id: str, tgt_name: str):
+                            try:
+                                async with AsyncSessionLocal() as bg_db:
+                                    t_q = (
+                                        select(TranscriptSegment)
+                                        .where(TranscriptSegment.session_id == sess_id)
+                                        .order_by(TranscriptSegment.timestamp.desc())
+                                        .limit(20)
+                                    )
+                                    bg_res = await bg_db.execute(t_q)
+                                    recent_segs = list(reversed(bg_res.scalars().all()))
+                                    ctx = "\n".join([f"[{s.timestamp.strftime('%H:%M:%S')}] {s.speaker}: {s.text}" for s in recent_segs])
+                                    
+                                    ai_spec = await llm_service.generate_quick_answer(
+                                        transcript_context=ctx,
+                                        target_name=tgt_name
+                                    )
+
+                                    await manager.broadcast(sess_id, {
+                                        "type": "PRECOMPUTED_ANSWERS",
+                                        "question_detected": ai_spec["question_detected"],
+                                        "spoken_response": ai_spec["spoken_response"],
+                                        "talking_points": ai_spec["talking_points"],
+                                        "tactical_responses": ai_spec.get("tactical_responses"),
+                                        "latency_ms": ai_spec.get("latency_ms", 0),
+                                        "generated_at": datetime.utcnow().strftime("%H:%M:%S")
+                                    })
+                            except Exception as err:
+                                logger.warning(f"Speculative pre-computation error: {err}")
+
+                        asyncio.create_task(precompute_speculative_answers(session_id, settings.TARGET_NAME))
 
             # 3. Direct Request for Quick Answer
             elif msg_type == "REQUEST_QUICK_ANSWER":
@@ -144,6 +179,7 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                         question_detected=ai_res["question_detected"],
                         spoken_response=ai_res["spoken_response"],
                         talking_points=json.dumps(ai_res["talking_points"], ensure_ascii=False),
+                        tactical_responses=json.dumps(ai_res.get("tactical_responses", {}), ensure_ascii=False),
                         context_used=context_text,
                         llm_model=ai_res.get("model_used", "gemini-2.5-flash"),
                         latency_ms=ai_res.get("latency_ms", 0)
@@ -159,6 +195,7 @@ async def websocket_session_endpoint(websocket: WebSocket, session_id: str):
                         "question_detected": ans_record.question_detected,
                         "spoken_response": ans_record.spoken_response,
                         "talking_points": ai_res["talking_points"],
+                        "tactical_responses": ai_res.get("tactical_responses"),
                         "latency_ms": ans_record.latency_ms,
                         "generated_at": ans_record.generated_at.strftime("%H:%M:%S")
                     })

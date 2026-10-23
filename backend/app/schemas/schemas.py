@@ -49,6 +49,11 @@ class TranscriptOut(BaseModel):
     confidence: float
 
 # --- AI Answer & Copilot Schemas ---
+class TacticalCard(BaseModel):
+    label: str
+    spoken_response: str
+    talking_points: List[str] = Field(default_factory=list)
+
 class QuickAnswerRequest(BaseModel):
     session_id: str
     target_name: Optional[str] = "Olivia"
@@ -61,6 +66,7 @@ class QuickAnswerResponse(BaseModel):
     question_detected: str
     spoken_response: str
     talking_points: List[str]
+    tactical_responses: Optional[dict] = None  # { "agree": ..., "stall": ..., "caution": ... }
     latency_ms: int
     generated_at: datetime
     model_used: str

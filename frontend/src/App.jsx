@@ -14,6 +14,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [transcripts, setTranscripts] = useState([]);
   const [currentAnswer, setCurrentAnswer] = useState(null);
+  const [precomputedAnswer, setPrecomputedAnswer] = useState(null);
   const [isLoadingAnswer, setIsLoadingAnswer] = useState(false);
   const [recentAlert, setRecentAlert] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
@@ -72,6 +73,9 @@ export default function App() {
         } else if (data.type === 'TARGET_ALERT') {
           setRecentAlert(data);
           AudioService.vibrateAlert();
+        } else if (data.type === 'PRECOMPUTED_ANSWERS') {
+          // Speculative 0ms background cache
+          setPrecomputedAnswer(data);
         } else if (data.type === 'QUICK_ANSWER') {
           setCurrentAnswer(data);
           setIsLoadingAnswer(false);
@@ -86,14 +90,28 @@ export default function App() {
     wsClientRef.current = ws;
   };
 
-  // 3. Quick Answer Trigger ("Ce să răspund?")
-  const handleTriggerQuickAnswer = async () => {
+  // 3. Quick Answer Trigger ("Ce să răspund?") with Speculative 0ms Cache
+  const handleTriggerQuickAnswer = async (preferredMode = null) => {
     if (!session) return;
+
+    // Instant Zero-Latency path if pre-computed in background
+    if (precomputedAnswer) {
+      setCurrentAnswer({
+        ...precomputedAnswer,
+        initialMode: preferredMode || 'agree'
+      });
+      setRecentAlert(null);
+      return;
+    }
+
     setIsLoadingAnswer(true);
 
     try {
       const answer = await api.getQuickAnswer(session.id, settings.targetName);
-      setCurrentAnswer(answer);
+      setCurrentAnswer({
+        ...answer,
+        initialMode: preferredMode || 'agree'
+      });
       // Dismiss any active alert banner once answered
       setRecentAlert(null);
     } catch (err) {

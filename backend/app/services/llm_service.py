@@ -11,29 +11,44 @@ Utilizatoarea se află într-o ședință de lucru profesională în limba româ
 Tocmai i s-a adresat o întrebare sau i s-a cerut părerea/intervenția.
 
 SARCINA TA:
-Analizează transcrierea recentă a conversației din ședință și generează IMEDIAT un răspuns perfect formulat, scurt și natural, pe care Olivia să îl poată citi sau rosti cu voce tare fără nicio ezitare.
+Analizează transcrierea recentă a conversației din ședință și generează IMEDIAT 3 VARIANTE TACTICE DE RĂSPUNS (exact frazele pe care Olivia să le poată rosti cu voce tare, la persoana I, fără nicio ezitare):
 
-REGULI STRICTE:
-1. FORMULARE EXACTĂ ("spoken_response"):
-   - Scrie exact replica pe care o va spune Olivia la persoana I ("Sunt de acord...", "Din punctul meu de vedere...", "Propun să...").
-   - Lungime: MAXIM 1-2 fraze clare, naturale, în limba română fluentă, fără clișee robotice sau limbaj de lemn.
-   - Dacă din context reiese o decizie clară sau o preferință a echipei, susține-o elegant.
-   - Dacă contextul este ambiguu sau lipsesc date tehnice specifice, oferă un răspuns diplomatic și profesionist (de exemplu: "Sunt pe aceeași lungime de undă cu propunerea colegilor; verific exact cifrele finale și revin cu confirmarea scrisă imediat după ședință.").
+1. "agree" (Acord / Susținere):
+   - Răspuns afirmativ, profesionist și constructiv. Susține direcția echipei sau confirmă termenul/bugetul.
+   - Lungime: MAXIM 1-2 fraze clare.
 
-2. IDENTIFICAREA ÎNTREBĂRII ("question_detected"):
-   - Rezumă clar într-o singură propoziție ce a fost întrebată Olivia.
+2. "stall" (Cumpără Timp / Scuză de Mute):
+   - Scuza executivă perfectă când a fost luată prin surprindere sau nu a fost atentă.
+   - Include menționarea scurtă a butonului de microfon ("Scuzați-mă, aveam microfonul oprit...") și oferă o aliniere generală cu promisiunea unui e-mail detaliat.
 
-3. PUNCTE DE SPRIJIN ("talking_points"):
-   - 2-3 idei scurte (sub formă de bullet points) în caz că i se cer detalii suplimentare.
+3. "caution" (Prudență / Amânare Diplomatică):
+   - Răspuns prudent, diplomatic, care evită un angajament prematur înainte de verificarea datelor financiare sau tehnice.
 
 FORMATUL RĂSPUNSULUI (JSON OBLIGATORIU):
 {
   "question_detected": "Întrebarea rezumată clar în română",
-  "spoken_response": "Fraza exactă, la persoana I, pe care Olivia o va spune cu voce tare.",
+  "spoken_response": "Fraza principală recomandată (de regulă varianta agree)",
   "talking_points": [
     "Punct de suport 1",
     "Punct de suport 2"
-  ]
+  ],
+  "tactical_responses": {
+    "agree": {
+      "label": "Acord / Susținere",
+      "spoken_response": "Fraza exactă de acord la persoana I...",
+      "talking_points": ["Idee suport 1", "Idee suport 2"]
+    },
+    "stall": {
+      "label": "Cumpără Timp (Scuză Mute)",
+      "spoken_response": "Scuzați-mă, a durat o secundă să găsesc butonul de unmute. Sunt aliniată cu ideea, trimit confirmarea scrisă pe mail imediat după ședință.",
+      "talking_points": ["Câștigă 15 secunde de respiro", "Mută detaliile pe e-mail"]
+    },
+    "caution": {
+      "label": "Prudență / Amânare",
+      "spoken_response": "Avem nevoie de cifrele finale înainte să fixăm o decizie fermă; revin cu confirmarea după ce verific datele.",
+      "talking_points": ["Evită angajamente premature", "Păstrează controlul deciziei"]
+    }
+  }
 }
 """
 
@@ -105,45 +120,78 @@ ULTIMELE MINUTE DIN ȘEDINȚĂ (TRANSCRIERE):
         latency = int((time.time() - start_time) * 1000)
         parsed = json.loads(response.text)
         
+        tactical = parsed.get("tactical_responses", {})
+        default_spoken = parsed.get("spoken_response") or (tactical.get("agree", {}).get("spoken_response", "Sunt de acord cu planul prezentat și putem merge mai departe."))
+        
         return {
             "question_detected": parsed.get("question_detected", "Întrebare adresată în ședință"),
-            "spoken_response": parsed.get("spoken_response", "Sunt de acord cu planul prezentat și putem merge mai departe."),
+            "spoken_response": default_spoken,
             "talking_points": parsed.get("talking_points", ["Totul este aliniat cu obiectivele stabilite."]),
+            "tactical_responses": tactical,
             "latency_ms": latency,
             "model_used": settings.LLM_MODEL
         }
 
     def _generate_heuristic_response(self, transcript: str, target_name: str, start_time: float) -> Dict[str, Any]:
         """
-        High-quality heuristic response engine for offline/testing mode.
-        Ensures the app is completely functional out of the box even before API keys are configured.
+        High-quality heuristic response engine with 3 tactical cards for offline/testing mode.
         """
         latency = int((time.time() - start_time) * 1000)
         transcript_lower = transcript.lower()
 
-        # Contextual pattern matching
         if "buget" in transcript_lower or "bani" in transcript_lower or "cost" in transcript_lower:
             question = f"{target_name} a fost întrebată despre bugetul sau costurile proiectului."
-            spoken = "Din estimările mele inițiale, ne încadrăm în bugetul alocat, dar propun să trimit o actualizare detaliată pe mail după ședință."
-            points = ["Bugetul este sub control", "Vom trimite tabelul actualizat până la sfârșitul zilei"]
+            agree_spoken = "Din estimările mele inițiale, ne încadrăm în bugetul alocat și nu avem blocaje majore."
+            agree_points = ["Bugetul este sub control", "Cheltuielile sunt în parametrii stabiliți"]
+            caution_spoken = "Avem nevoie să validăm ultimele facturi înainte de a aproba cheltuieli suplimentare; trimit situația după ședință."
+            caution_points = ["Necesită verificare financiară", "Evită depășirile neplanificate"]
         elif "termen" in transcript_lower or "termenul" in transcript_lower or "vineri" in transcript_lower or "deadline" in transcript_lower:
             question = f"{target_name} a fost întrebată dacă termenul de livrare poate fi respectat."
-            spoken = "Suntem în grafic cu sarcinile principale; cred că putem livra conform termenului agreat fără probleme."
-            points = ["Termenul este fezabil", "Echipa finalizează ultimele verificări"]
+            agree_spoken = "Suntem în grafic cu sarcinile principale; putem livra conform termenului agreat fără probleme."
+            agree_points = ["Livrabilul este în stadiu avansat", "Echipa finalizează ultimele verificări"]
+            caution_spoken = "Pentru a menține calitatea și a evita riscurile, propun să alocăm o marjă de o jumătate de zi suplimentară."
+            caution_points = ["Prioritate pe calitate", "Marjă de siguranță recomandată"]
         elif "raport" in transcript_lower or "document" in transcript_lower or "prezentare" in transcript_lower:
-            question = f"{target_name} a fost întrebată despre statusul raportului sau al documentației."
-            spoken = "Raportul este aproape gata; fac o ultimă revizuire pe cifre și îl distribui tuturor colegilor."
-            points = ["Documentul este în faza finală de verificare", "Urmează trimiterea pe canalul echipei"]
+            question = f"{target_name} a fost întrebată despre statusul raportului sau documentației."
+            agree_spoken = "Raportul este aproape gata; fac o ultimă revizuire pe cifre și îl distribui tuturor colegilor."
+            agree_points = ["Documentul este în faza finală", "Urmează trimiterea pe canalul echipei"]
+            caution_spoken = "Așteptăm datele finale din teren pentru a completa anexele; va fi gata imediat ce primim confirmările."
+            caution_points = ["Depinde de date externe", "Fără compromisuri pe acuratețe"]
         else:
             question = f"{target_name} a fost solicitată pentru o opinie sau confirmare."
-            spoken = "Sunt pe aceeași lungime de undă cu propunerea discutată și susțin direcția propusă de echipă."
-            points = ["Aliniere completă cu decizia grupului", "Disponibilitate pentru clarificări ulterioare"]
+            agree_spoken = "Sunt pe aceeași lungime de undă cu propunerea discutată și susțin direcția propusă de echipă."
+            agree_points = ["Aliniere completă cu grupul", "Disponibilitate pentru implementare"]
+            caution_spoken = "Direcția este bună, dar aș prefera să analizăm impactul asupra resurselor înainte de decizia finală."
+            caution_points = ["Evaluare a resurselor necesară", "Decizie prudentă"]
+
+        # Universal stall excuse card
+        stall_spoken = "Vă rog să mă scuzați, a durat o secundă să găsesc butonul de unmute. Sunt aliniată cu ideea, trimit confirmarea detaliată pe mail imediat după ședință."
+        stall_points = ["Scuză universală de microfon", "Câștigă 15 secunde fără stres"]
+
+        tactical = {
+            "agree": {
+                "label": "🟢 Acord / Da",
+                "spoken_response": agree_spoken,
+                "talking_points": agree_points
+            },
+            "stall": {
+                "label": "🟡 Cumpără Timp (Scuză Mute)",
+                "spoken_response": stall_spoken,
+                "talking_points": stall_points
+            },
+            "caution": {
+                "label": "🔴 Prudență / Amânare",
+                "spoken_response": caution_spoken,
+                "talking_points": caution_points
+            }
+        }
 
         return {
             "question_detected": question,
-            "spoken_response": spoken,
-            "talking_points": points,
-            "latency_ms": max(latency, 280),
+            "spoken_response": agree_spoken,
+            "talking_points": agree_points,
+            "tactical_responses": tactical,
+            "latency_ms": max(latency, 260),
             "model_used": "copilot-smart-heuristic"
         }
 

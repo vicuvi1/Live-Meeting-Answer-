@@ -216,8 +216,44 @@ export default function FloatingCopilot({
         </button>
       </form>
 
+      {/* TACTICAL 3-CARD QUICK DOCK */}
+      <div className="mt-2.5 grid grid-cols-3 gap-2">
+        <button
+          onClick={() => onTriggerQuickAnswer('agree')}
+          className="btn-tactile p-2 rounded-xl bg-slate-900/90 hover:bg-emerald-950/60 border border-emerald-500/40 hover:border-emerald-500 text-left flex items-center space-x-2 transition shadow-sm"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+          <div className="truncate">
+            <span className="text-[11px] font-bold text-emerald-300 block leading-tight">1. Da / Acord</span>
+            <span className="text-[9px] text-slate-400 block truncate">Susține propunerea</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onTriggerQuickAnswer('stall')}
+          className="btn-tactile p-2 rounded-xl bg-slate-900/90 hover:bg-amber-950/60 border border-amber-500/40 hover:border-amber-500 text-left flex items-center space-x-2 transition shadow-sm"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0" />
+          <div className="truncate">
+            <span className="text-[11px] font-bold text-amber-300 block leading-tight">2. Scuză Mute</span>
+            <span className="text-[9px] text-slate-400 block truncate">Cumpără 15s</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onTriggerQuickAnswer('caution')}
+          className="btn-tactile p-2 rounded-xl bg-slate-900/90 hover:bg-rose-950/60 border border-rose-500/40 hover:border-rose-500 text-left flex items-center space-x-2 transition shadow-sm"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-400 shrink-0" />
+          <div className="truncate">
+            <span className="text-[11px] font-bold text-rose-300 block leading-tight">3. Prudență</span>
+            <span className="text-[9px] text-slate-400 block truncate">Verific și revin</span>
+          </div>
+        </button>
+      </div>
+
       {/* THE LIFESAVER SECTION (Tactile & Prominent for Olivia) */}
-      <div className="mt-3 grid grid-cols-4 gap-2.5">
+      <div className="mt-2.5 grid grid-cols-4 gap-2.5">
         
         {/* Toggle Live Microphone */}
         <button
