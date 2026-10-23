@@ -140,5 +140,11 @@ export const api = {
     });
     if (!res.ok) throw new Error('Eroare la înregistrarea feedback-ului');
     return res.json();
+  },
+
+  async checkUpdate() {
+    const res = await fetch(`${API_BASE}/system/check-update`);
+    if (!res.ok) throw new Error('Nu s-au putut verifica actualizările');
+    return res.json();
   }
 };

@@ -10,7 +10,8 @@ import {
   AlertCircle, 
   Cpu, 
   Layers, 
-  Sparkles 
+  Sparkles,
+  RefreshCw 
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -52,6 +53,26 @@ export default function SettingsModal({
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null); // { success: bool, message: string }
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // In-App Updates State
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await api.checkUpdate();
+      setUpdateInfo(res);
+    } catch (e) {
+      setUpdateInfo({
+        has_update: false,
+        latest_version: 'v1.0.0',
+        release_notes: 'Nu s-a putut contacta serverul GitHub.'
+      });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const handleTestKey = async () => {
     const activeKey = provider === 'gemini' ? geminiKey.trim() : openrouterKey.trim();
@@ -311,6 +332,62 @@ export default function SettingsModal({
               placeholder="Deepgram token..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
             />
+          </div>
+
+          {/* In-App GitHub Updates */}
+          <div className="pt-2 border-t border-slate-800">
+            <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-200">Actualizări Aplicație (GitHub)</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/40">
+                  v1.0.0
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Verifică dacă există o versiune nouă a aplicației Olivia Copilot pe GitHub și descarcă actualizarea direct pe telefon.
+              </p>
+              
+              <button
+                type="button"
+                onClick={handleCheckUpdate}
+                disabled={checkingUpdate}
+                className="btn-tactile w-full py-2 rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-emerald-300 flex items-center justify-center space-x-2 transition"
+              >
+                <RefreshCw className={`w-3 h-3 ${checkingUpdate ? 'animate-spin' : ''}`} />
+                <span>{checkingUpdate ? 'Se caută pe GitHub...' : '🔍 Verifică Actualizări pe GitHub'}</span>
+              </button>
+
+              {updateInfo && (
+                <div className={`p-2.5 rounded-xl text-xs flex items-center justify-between transition-all ${
+                  updateInfo.has_update 
+                    ? 'bg-emerald-950/90 border border-emerald-500 text-emerald-200 shadow-lg shadow-emerald-900/30' 
+                    : 'bg-slate-900 border border-slate-800 text-slate-300'
+                }`}>
+                  <div className="flex flex-col">
+                    <span className="font-semibold">
+                      {updateInfo.has_update ? `🎉 Versiune nouă: ${updateInfo.latest_version}` : '✓ Aplicația este la zi!'}
+                    </span>
+                    <span className="text-[10px] opacity-75">
+                      {updateInfo.has_update ? 'Apasă butonul pentru a descărca' : 'Nu sunt modificări noi pe GitHub'}
+                    </span>
+                  </div>
+
+                  {updateInfo.has_update && (
+                    <a
+                      href={updateInfo.apk_download_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-700/40 active:scale-95 transition"
+                    >
+                      Descarcă APK
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Save Button */}

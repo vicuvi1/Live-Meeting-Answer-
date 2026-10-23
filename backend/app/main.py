@@ -1,4 +1,5 @@
 import logging
+import httpx
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -64,4 +65,53 @@ async def health_check():
         "gemini_configured": bool(settings.GEMINI_API_KEY),
         "openrouter_configured": bool(settings.OPENROUTER_API_KEY),
         "deepgram_configured": bool(settings.DEEPGRAM_API_KEY)
+    }
+
+@app.get("/api/system/check-update", tags=["System"])
+async def check_update():
+    """Checks GitHub releases for app updates."""
+    github_repo = "vicuvi1/Live-Meeting-Answer-"
+    current_version = settings.APP_VERSION
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{github_repo}/releases/latest",
+                headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "OliviaCopilot"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                latest_tag = data.get("tag_name", "").lstrip("v").strip()
+                html_url = data.get("html_url", f"https://github.com/{github_repo}/releases")
+                body = data.get("body", "")
+                
+                # Find APK asset
+                apk_url = f"https://github.com/{github_repo}/releases/latest/download/app-release.apk"
+                for asset in data.get("assets", []):
+                    if asset.get("name", "").endswith(".apk"):
+                        apk_url = asset.get("browser_download_url", apk_url)
+                        break
+
+                # Simple version comparison
+                has_update = False
+                if latest_tag and latest_tag != current_version.lstrip("v"):
+                    has_update = True
+
+                return {
+                    "has_update": has_update,
+                    "current_version": f"v{current_version.lstrip('v')}",
+                    "latest_version": f"v{latest_tag}" if latest_tag else f"v{current_version}",
+                    "release_notes": body,
+                    "apk_download_url": apk_url,
+                    "html_url": html_url
+                }
+    except Exception as e:
+        logger.warning(f"Failed to check GitHub releases: {e}")
+
+    return {
+        "has_update": False,
+        "current_version": f"v{current_version.lstrip('v')}",
+        "latest_version": f"v{current_version.lstrip('v')}",
+        "release_notes": "Sunteți la zi cu ultima versiune.",
+        "apk_download_url": f"https://github.com/{github_repo}/releases/latest",
+        "html_url": f"https://github.com/{github_repo}/releases"
     }

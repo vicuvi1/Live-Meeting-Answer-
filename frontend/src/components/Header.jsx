@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Radio, History, Settings, Sparkles, Maximize2, Minimize2, Type } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Radio, History, Settings, Sparkles, Maximize2, Minimize2, Type, Download } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Header({ 
   activeTab, 
@@ -11,6 +12,17 @@ export default function Header({
   onToggleFontSize
 }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    api.checkUpdate().then(res => {
+      if (isMounted && res.has_update) {
+        setUpdateAvailable(res);
+      }
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -77,6 +89,21 @@ export default function Header({
         {/* Usability Controls: Font Scale, Full Screen, Settings */}
         <div className="flex items-center space-x-1 sm:space-x-1.5">
           
+          {/* Update Available Pulsing Pill */}
+          {updateAvailable && (
+            <a
+              href={updateAvailable.apk_download_url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center space-x-1 px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold animate-pulse hover:bg-emerald-500/30 transition shrink-0 shadow-lg shadow-emerald-900/40"
+              title={`Actualizare ${updateAvailable.latest_version} disponibilă. Apasă pentru a descărca.`}
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Update</span>
+              <span>{updateAvailable.latest_version}</span>
+            </a>
+          )}
+
           {/* Font Scale Accessibility Button */}
           <button
             onClick={onToggleFontSize}

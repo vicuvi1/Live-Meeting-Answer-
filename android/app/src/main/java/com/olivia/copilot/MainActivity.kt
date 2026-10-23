@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -14,9 +15,11 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
@@ -33,6 +36,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var editTargetName: EditText
     private lateinit var txtStatus: TextView
     private lateinit var prefs: SharedPreferences
+
+    // In-App Auto-Updater views
+    private lateinit var cardUpdate: CardView
+    private lateinit var txtCurrentVersion: TextView
+    private lateinit var txtUpdateStatus: TextView
+    private lateinit var progressUpdate: ProgressBar
+    private lateinit var btnCheckOrUpdate: Button
+    private var availableUpdate: UpdateInfo? = null
+    private val currentAppVersion = "1.0.0"
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var isServiceRunning = false
@@ -93,6 +105,9 @@ class MainActivity : AppCompatActivity() {
                 toggleFloatingService()
             }
         }
+
+        // Setup In-App Auto-Updater from GitHub
+        setupUpdateManager()
     }
 
     private fun checkNotificationPermission() {
@@ -260,6 +275,92 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
             }
             Toast.makeText(this, "Activează 'Pornire automată' pentru Olivia Copilot", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun setupUpdateManager() {
+        cardUpdate = findViewById(R.id.cardUpdate)
+        txtCurrentVersion = findViewById(R.id.txtCurrentVersion)
+        txtUpdateStatus = findViewById(R.id.txtUpdateStatus)
+        progressUpdate = findViewById(R.id.progressUpdate)
+        btnCheckOrUpdate = findViewById(R.id.btnCheckOrUpdate)
+
+        txtCurrentVersion.text = "v$currentAppVersion"
+
+        btnCheckOrUpdate.setOnClickListener {
+            if (availableUpdate != null && availableUpdate?.hasUpdate == true) {
+                startUpdateDownload(availableUpdate!!)
+            } else {
+                checkForUpdates(manual = true)
+            }
+        }
+
+        // Silent automatic check on app open
+        checkForUpdates(manual = false)
+    }
+
+    private fun checkForUpdates(manual: Boolean) {
+        if (manual) {
+            txtUpdateStatus.text = "Se caută actualizări pe GitHub..."
+            btnCheckOrUpdate.isEnabled = false
+        }
+
+        scope.launch {
+            val result = UpdateManager.checkForUpdate(currentAppVersion)
+            btnCheckOrUpdate.isEnabled = true
+
+            result.onSuccess { info ->
+                if (info.hasUpdate) {
+                    availableUpdate = info
+                    cardUpdate.setCardBackgroundColor(Color.parseColor("#065F46"))
+                    txtUpdateStatus.text = "🎉 O nouă versiune (${info.latestVersion}) este disponibilă!"
+                    btnCheckOrUpdate.text = "⚡ Actualizează Acum la ${info.latestVersion}"
+                    btnCheckOrUpdate.setBackgroundColor(Color.parseColor("#10B981"))
+                    if (manual) {
+                        Toast.makeText(this@MainActivity, "Actualizare găsită: ${info.latestVersion}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    availableUpdate = null
+                    txtUpdateStatus.text = "✓ Ești la zi cu ultima versiune (v$currentAppVersion)"
+                    btnCheckOrUpdate.text = "🔍 Verifică Actualizări GitHub"
+                    btnCheckOrUpdate.setBackgroundColor(Color.parseColor("#059669"))
+                    if (manual) {
+                        Toast.makeText(this@MainActivity, "Aplicația este la zi!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }.onFailure { err ->
+                if (manual) {
+                    txtUpdateStatus.text = "✕ Verificare eșuată (${err.localizedMessage ?: "rețea"})"
+                    btnCheckOrUpdate.text = "🔄 Reîncearcă Verificarea"
+                }
+            }
+        }
+    }
+
+    private fun startUpdateDownload(info: UpdateInfo) {
+        btnCheckOrUpdate.isEnabled = false
+        btnCheckOrUpdate.text = "⏳ Se descarcă..."
+        progressUpdate.visibility = View.VISIBLE
+        progressUpdate.isIndeterminate = false
+        progressUpdate.progress = 0
+        txtUpdateStatus.text = "Se descarcă versiunea ${info.latestVersion}..."
+
+        scope.launch {
+            UpdateManager.downloadAndInstallApk(
+                activity = this@MainActivity,
+                apkUrl = info.apkUrl,
+                onProgress = { percent ->
+                    progressUpdate.progress = percent
+                    txtUpdateStatus.text = "Descărcat: $percent%..."
+                },
+                onError = { errorMsg ->
+                    progressUpdate.visibility = View.GONE
+                    btnCheckOrUpdate.isEnabled = true
+                    btnCheckOrUpdate.text = "⚡ Reîncearcă Actualizarea"
+                    txtUpdateStatus.text = "✕ $errorMsg"
+                    Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
+                }
+            )
         }
     }
 
