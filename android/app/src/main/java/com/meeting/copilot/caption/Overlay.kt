@@ -1,37 +1,37 @@
 package com.meeting.copilot.caption
 
+import android.animation.LayoutTransition
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
+import android.os.Build
+import android.text.TextUtils
 import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import com.meeting.copilot.data.Prefs
 import com.meeting.copilot.engine.AlertLevel
 import com.meeting.copilot.engine.MeetingEngine
 import com.meeting.copilot.engine.Status
 import com.meeting.copilot.engine.UiState
-import kotlin.math.abs
 
 /**
  * Floating bubble over Zoom / Meet. Its colour says what's happening (green: listening,
  * amber: mentioned or a topic came up, red and pulsing: she was asked something). Tapping it
  * opens a panel with the suggested answer and "what did I miss"; it opens by itself on a question.
  */
-@SuppressLint("ClickableViewAccessibility")
+
 class Overlay(
     private val context: Context,
     private val engine: MeetingEngine,
@@ -57,6 +57,7 @@ class Overlay(
         val blueDeep = Color.rgb(20, 34, 63)
         val idle = Color.rgb(71, 85, 105)
         val onAccent = Color.rgb(6, 17, 12)
+        val islandBorder = Color.rgb(40, 44, 56)
     }
 
     private val wm = context.getSystemService(WindowManager::class.java)
@@ -65,29 +66,35 @@ class Overlay(
     private val screenWidth get() = context.resources.displayMetrics.widthPixels
     private val screenHeight get() = context.resources.displayMetrics.heightPixels
 
-    private var bubble: TextView? = null
+    // The "island": a black pill at the top centre, around the front camera, like Dynamic Island.
+    private var bubble: LinearLayout? = null
+    private var islandDot: View? = null
+    private var islandTitle: TextView? = null
+    private var islandSubtitle: TextView? = null
     private var pulse: ObjectAnimator? = null
-    private val bubbleSize = dp(60)
+    private var dotPulse: ObjectAnimator? = null
     private val bubbleParams = WindowManager.LayoutParams(
-        bubbleSize, bubbleSize,
+        WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT,
     ).apply {
-        gravity = Gravity.TOP or Gravity.START
-        x = screenWidth - bubbleSize - dp(8)
-        y = (screenHeight * 0.38).toInt()
+        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        y = dp(6)
+        layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= 30) {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else {
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 
     companion object {
-        /** True after she dropped the bubble on the ✕; cleared when the meeting ends or from the app. */
+        /** True after she long-pressed the island; cleared when the meeting ends or from the app. */
         val hidden = kotlinx.coroutines.flow.MutableStateFlow(false)
         /** The app itself is open: it shows everything, so the bubble steps aside. */
         val appVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
     }
-
-    private var dismissTarget: TextView? = null
-    private var overTarget = false
 
     private var panel: View? = null
     private var panelContent: LinearLayout? = null
@@ -135,7 +142,7 @@ class Overlay(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(44)
+            y = dp(54)
             windowAnimations = android.R.style.Animation_Toast
         }
         try {
@@ -163,120 +170,104 @@ class Overlay(
     }
 
     fun destroy() {
-        hideDismissTarget()
         closePanel()
         removeBubble()
     }
 
-    // ---------------------------------------------------------------- bubble
+    // ---------------------------------------------------------------- island
 
-    private fun createBubble(): TextView? {
-        val view = TextView(context).apply {
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            elevation = dp(8).toFloat()
+    private fun createBubble(): LinearLayout? {
+        val dot = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(C.green)
+            }
         }
-        var downX = 0f
-        var downY = 0f
-        var startX = 0
-        var startY = 0
-        var dragging = false
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX
-                    downY = event.rawY
-                    startX = bubbleParams.x
-                    startY = bubbleParams.y
-                    dragging = false
-                    view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(90).start()
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - downX
-                    val dy = event.rawY - downY
-                    if (!dragging && (abs(dx) > dp(10) || abs(dy) > dp(10))) {
-                        dragging = true
-                        showDismissTarget()
-                    }
-                    if (dragging) {
-                        bubbleParams.x = (startX + dx).toInt()
-                        bubbleParams.y = (startY + dy).toInt().coerceIn(0, screenHeight - bubbleSize)
-                        update(view, bubbleParams)
-                        highlightTarget(isOverTarget(event.rawX, event.rawY))
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
-                    val dropped = dragging && isOverTarget(event.rawX, event.rawY)
-                    hideDismissTarget()
-                    if (event.action == MotionEvent.ACTION_UP) {
-                        when {
-                            dropped -> {
-                                hidden.value = true
-                                closePanel()
-                                removeBubble()
-                                android.widget.Toast.makeText(
-                                    context, "Bula e ascunsă până la finalul ședinței. O poți reafișa din aplicație.",
-                                    android.widget.Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                            dragging -> snapToEdge(view)
-                            panel == null -> openPanel()
-                            else -> closePanel()
-                        }
-                    }
-                    true
-                }
-                else -> false
+        val title = text("", 14f, Color.WHITE, bold = true).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val subtitle = text("", 13.5f, C.soft).apply {
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_HORIZONTAL
+            visibility = View.GONE
+        }
+        val row = row().apply {
+            addView(dot, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(9) })
+            addView(title)
+        }
+        val island = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(18), dp(9), dp(18), dp(9))
+            minimumHeight = dp(36)
+            background = rounded(Color.BLACK, 24, C.islandBorder)
+            elevation = dp(10).toFloat()
+            layoutTransition = LayoutTransition().apply { enableTransitionType(LayoutTransition.CHANGING) }
+            addView(row)
+            addView(subtitle)
+            setOnClickListener { if (panel == null) openPanel() else closePanel() }
+            setOnLongClickListener {
+                hidden.value = true
+                closePanel()
+                removeBubble()
+                Toast.makeText(context, "Ascuns până la finalul ședinței. Îl poți reafișa din aplicație.", Toast.LENGTH_LONG).show()
+                true
             }
         }
         return try {
-            wm.addView(view, bubbleParams)
-            bubble = view
-            view
+            wm.addView(island, bubbleParams)
+            bubble = island
+            islandDot = dot
+            islandTitle = title
+            islandSubtitle = subtitle
+            island
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun styleBubble(view: TextView, state: UiState) {
-        val age = System.currentTimeMillis() - state.alertAt
+    private fun styleBubble(view: LinearLayout, state: UiState) {
+        val now = System.currentTimeMillis()
+        val age = now - state.alertAt
         val asked = state.alert == AlertLevel.DIRECT && age < 120_000
-        val (color, label) = when {
-            asked -> C.redStrong to "!"
-            (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC) && age < 60_000 -> C.amber to "•"
-            state.health != null -> C.amber to "?"
-            state.status == Status.LISTENING -> C.green to ""
-            else -> C.idle to "CC"
+        val softAlert = (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC) && age < 60_000
+        val (color, title) = when {
+            asked -> C.redStrong to "Întrebare pentru tine"
+            softAlert && state.alert == AlertLevel.MENTION -> C.amber to "Ai fost menționată"
+            softAlert -> C.amber to "Subiect urmărit"
+            state.status == Status.LISTENING && state.health != null -> C.amber to "Nu primesc subtitrări"
+            state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "Ședința nu e pe ecran"
+            state.status == Status.LISTENING -> C.green to "Ascult · ${state.startedAt?.let { (now - it) / 60_000 } ?: 0} min"
+            else -> C.idle to "Pornesc subtitrările…"
         }
-        view.text = label
-        view.textSize = if (label == "CC") 14f else 26f
-        view.setTextColor(if (color == C.green || color == C.amber) C.onAccent else Color.WHITE)
-        // Outer soft halo + solid core with a thin light ring.
-        val halo = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)))
+        islandTitle?.text = title
+        (islandDot?.background as? GradientDrawable)?.setColor(color)
+        val detail = when {
+            asked -> state.answer?.question ?: state.alertText
+            softAlert -> state.alertText
+            else -> null
         }
-        val core = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(color)
-            setStroke(dp(2), Color.argb(150, 255, 255, 255))
+        islandSubtitle?.apply {
+            text = detail.orEmpty()
+            maxWidth = (screenWidth * 0.8).toInt()
+            visibility = if (detail.isNullOrBlank()) View.GONE else View.VISIBLE
         }
-        view.background = LayerDrawable(arrayOf(halo, core)).apply { setLayerInset(1, dp(5), dp(5), dp(5), dp(5)) }
+        (view.background as? GradientDrawable)?.setStroke(dp(1), if (asked) C.red else C.islandBorder)
         setPulsing(view, asked)
+        setDotPulsing(state.status == Status.LISTENING && !asked)
     }
 
+    /** Gentle grow-shrink while a question waits for her. */
     private fun setPulsing(view: View, on: Boolean) {
         if (on && pulse == null) {
             pulse = ObjectAnimator.ofPropertyValuesHolder(
                 view,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.14f),
-                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.14f),
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.05f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.05f),
             ).apply {
-                duration = 650
+                duration = 700
                 repeatMode = ValueAnimator.REVERSE
                 repeatCount = ValueAnimator.INFINITE
                 start()
@@ -289,78 +280,21 @@ class Overlay(
         }
     }
 
-    private fun snapToEdge(view: View) {
-        val targetX = if (bubbleParams.x + bubbleSize / 2 < screenWidth / 2) dp(8) else screenWidth - bubbleSize - dp(8)
-        ValueAnimator.ofInt(bubbleParams.x, targetX).apply {
-            duration = 200
-            addUpdateListener {
-                bubbleParams.x = it.animatedValue as Int
-                update(view, bubbleParams)
+    /** The green dot breathes while listening. */
+    private fun setDotPulsing(on: Boolean) {
+        val dot = islandDot ?: return
+        if (on && dotPulse == null) {
+            dotPulse = ObjectAnimator.ofFloat(dot, View.ALPHA, 1f, 0.3f).apply {
+                duration = 900
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
             }
-            start()
+        } else if (!on && dotPulse != null) {
+            dotPulse?.cancel()
+            dotPulse = null
+            dot.alpha = 1f
         }
-    }
-
-    // ---------------------------------------------------------------- drag-to-dismiss target
-
-    private val targetSize get() = dp(68)
-    private val targetCenterX get() = screenWidth / 2f
-    private val targetCenterY get() = screenHeight - dp(110).toFloat()
-
-    private fun showDismissTarget() {
-        if (dismissTarget != null) return
-        val view = TextView(context).apply {
-            text = "✕"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(200, 30, 36, 50))
-                setStroke(dp(2), Color.argb(160, 255, 255, 255))
-            }
-        }
-        val params = WindowManager.LayoutParams(
-            targetSize, targetSize,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (targetCenterX - targetSize / 2).toInt()
-            y = (targetCenterY - targetSize / 2).toInt()
-        }
-        try {
-            wm.addView(view, params)
-            dismissTarget = view
-            overTarget = false
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun isOverTarget(rawX: Float, rawY: Float): Boolean {
-        if (dismissTarget == null) return false
-        val dx = rawX - targetCenterX
-        val dy = rawY - targetCenterY
-        return dx * dx + dy * dy < (dp(90) * dp(90)).toFloat()
-    }
-
-    private fun highlightTarget(on: Boolean) {
-        if (on == overTarget) return
-        overTarget = on
-        val view = dismissTarget ?: return
-        // Colour change only: scaling would clip the circle at its window's edges.
-        (view.background as? GradientDrawable)?.setColor(if (on) C.redStrong else Color.argb(200, 30, 36, 50))
-    }
-
-    private fun hideDismissTarget() {
-        val view = dismissTarget ?: return
-        try {
-            wm.removeView(view)
-        } catch (_: Exception) {
-        }
-        dismissTarget = null
-        overTarget = false
     }
 
     private fun setKeepScreenOn(on: Boolean) {
@@ -379,11 +313,16 @@ class Overlay(
         val view = bubble ?: return
         pulse?.cancel()
         pulse = null
+        dotPulse?.cancel()
+        dotPulse = null
         try {
             wm.removeView(view)
         } catch (_: Exception) {
         }
         bubble = null
+        islandDot = null
+        islandTitle = null
+        islandSubtitle = null
         keepScreenOn = false
         bubbleParams.flags = bubbleParams.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
     }
