@@ -159,12 +159,13 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(bottom = 4.dp),
             )
             if (Setup.isXiaomi) {
-                StepRow(1, false, "Pornire automată", "Securitate → Pornire automată → Pornit", "Deschide") { Setup.openAutostart(context) }
+                XiaomiSteps(prefs, resumes, firstNumber = 1)
+            } else {
+                StepRow(1, batteryOk, "Baterie fără restricții", "Ca să nu fie oprită în fundal", "Deschide") {
+                    Setup.requestBatteryUnrestricted(context)
+                }
+                StepRow(2, false, "Blochează în Recente", "Ține apăsat pe aplicație în Recente → lacăt", null) {}
             }
-            StepRow(if (Setup.isXiaomi) 2 else 1, batteryOk, "Baterie fără restricții", "Ca să nu fie oprită în fundal", "Deschide") {
-                Setup.requestBatteryUnrestricted(context)
-            }
-            StepRow(if (Setup.isXiaomi) 3 else 2, false, "Blochează în Recente", "Ține apăsat pe aplicație în Recente → lacăt", null) {}
         }
 
         SettingsGroup("Test fără ședință", Icons.Filled.PlayArrow, Tone.Success) {

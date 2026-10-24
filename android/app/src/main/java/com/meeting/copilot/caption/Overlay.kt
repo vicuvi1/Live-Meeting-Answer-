@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -266,7 +267,10 @@ class Overlay(
         val wave = WaveView(context, C.green)
         val dot = View(context).apply { this.background = oval(C.idle) }
         val label = text("", 14.5f, Color.WHITE, bold = true).apply {
+            // Fixed size like the real island: a large system font would push it over the status icons.
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f)
             maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
         }
@@ -440,7 +444,7 @@ class Overlay(
             text = label
             setTextColor(if (asked) C.red else Color.WHITE)
             // Both sides keep the same width so the pill stays centred on the camera.
-            val side = maxOf(dp(58), paint.measureText(label).roundToInt() + dp(4))
+            val side = (paint.measureText(label).roundToInt() + dp(4)).coerceIn(dp(58), dp(84))
             fitCompactWidth(dp(28) + 2 * side + camGap)
         }
         islandBg?.setStroke(dp(1), if (asked) Color.argb(160, 239, 68, 68) else C.islandEdge)

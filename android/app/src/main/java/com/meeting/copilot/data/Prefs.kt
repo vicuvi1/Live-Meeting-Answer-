@@ -32,6 +32,11 @@ class Prefs(context: Context) {
     var showBubble by flag("show_bubble", true)
     /** Press the captions button in Zoom/Meet automatically and choose Romanian. */
     var autoCaptions by flag("auto_captions", true)
+    /** HyperOS steps Android can't report back; she marks them done after opening them. */
+    var xiaomiAutostartDone by flag("xiaomi_autostart_done", false)
+    var xiaomiFloatingDone by flag("xiaomi_floating_done", false)
+    var xiaomiRecentsDone by flag("xiaomi_recents_done", false)
+
     var diagnostics by flag("diagnostics", false)
     var diagnosticsAllApps by flag("diagnostics_all_apps", false)
 

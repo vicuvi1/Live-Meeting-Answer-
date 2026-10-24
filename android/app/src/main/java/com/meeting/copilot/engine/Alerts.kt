@@ -31,7 +31,7 @@ enum class AlertLevel { NONE, TOPIC, MENTION, DIRECT, HEALTH }
 class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpeech.OnInitListener {
 
     companion object {
-        private const val CHANNEL_DIRECT = "direct_question"
+        const val CHANNEL_DIRECT = "direct_question"
         private const val CHANNEL_SOFT = "mentions_topics"
         private const val CHANNEL_INFO = "meeting_info"
         private const val ID_ALERT = 10
