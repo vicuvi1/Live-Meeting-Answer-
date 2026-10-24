@@ -1,0 +1,45 @@
+name: Caption Probe APK
+
+on:
+  push:
+    paths:
+      - 'spike/caption-probe/**'
+      - '.github/workflows/caption-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: spike/caption-probe
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # The runner image already ships the Android SDK; Gradle fetches anything missing.
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk caption-probe.apk
+
+      - name: Publish test release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: caption-probe-spike
+          name: Caption Probe (test build)
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          body: |
+            Test tool for checking whether Zoom / Google Meet captions can be read on the phone.
+            Install `caption-probe.apk`, then follow `spike/caption-probe/README.md`.
+            Built from ${{ github.sha }}.
+          files: spike/caption-probe/caption-probe.apk
