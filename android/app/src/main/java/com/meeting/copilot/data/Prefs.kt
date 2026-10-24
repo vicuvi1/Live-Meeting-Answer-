@@ -25,7 +25,7 @@ class Prefs(context: Context) {
     /** Replaced automatically with Google's newest Flash model when this one is retired. */
     var geminiModel by text("gemini_model", "gemini-3.8-flash")
     var openRouterKey by text("openrouter_key", "")
-    var openRouterModel by text("openrouter_model", "google/gemini-2.5-flash")
+    var openRouterModel by text("openrouter_model", "anthropic/claude-haiku-5.5")
 
     var vibrate by flag("vibrate", true)
     var whisperQuestion by flag("whisper_question", false)

@@ -104,7 +104,7 @@ class LlmClient(private val prefs: Prefs) {
     }
 
     private fun openRouter(system: String, user: String, maxTokens: Int, timeoutMs: Int): String {
-        val model = prefs.openRouterModel.trim().ifEmpty { "google/gemini-2.5-flash" }
+        val model = prefs.openRouterModel.trim().ifEmpty { "anthropic/claude-haiku-5.5" }
         val body = JSONObject()
             .put("model", model)
             .put("temperature", 0.3)
