@@ -61,6 +61,22 @@ class DetectorTest {
     }
 
     @Test
+    fun picksNewestStableFlashModel() {
+        val list = LlmClient.parseJson(
+            """{"models":[
+              {"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/gemini-3.8-flash","supportedGenerationMethods":["generateContent","countTokens"]},
+              {"name":"models/gemini-4.0-flash-preview-11-2026","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/gemini-3.9-flash-lite","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/gemini-3.9-flash-image","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/gemini-3.5-pro","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/text-embedding-005","supportedGenerationMethods":["embedContent"]}
+            ]}"""
+        )
+        assertEquals("gemini-3.8-flash", LlmClient.pickFlashModel(list))
+    }
+
+    @Test
     fun answerFallsBackToSafeLine() {
         val answer = Prompts.parseAnswer(LlmClient.parseJson("{\"question\":\"Când e gata?\",\"confident\":false}"), "trigger", 5)
         assertEquals(Prompts.SAFE_LINE, answer.answer)
