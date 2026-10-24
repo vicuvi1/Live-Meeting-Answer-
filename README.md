@@ -1,189 +1,81 @@
-# 🎙️ Live Meeting Copilot (Live Meeting Assistant)
+# Asistent Ședințe
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-18.3-61DAFB.svg)](https://react.dev)
-[![Vite](https://img.shields.io/badge/Vite-6.0-646CFF.svg)](https://vitejs.dev)
-[![Language](https://img.shields.io/badge/Language-Romanian%20(ro--RO)-emerald.svg)]()
+A phone-only meeting helper for someone who follows an online meeting (Zoom / Google Meet)
+while also busy with something else. Built for a Xiaomi 15T Pro (HyperOS); works on Android 10+.
 
-> **An ultra-fast, discreet AI Meeting Copilot designed for users juggling dual meetings simultaneously (e.g., in-person and online on Zoom/Google Meet). It transcribes Romanian conversation in real-time, alerts the user when they are called upon, and provides a 1-tap "Lifesaver" button that instantly generates the perfect natural Romanian spoken response.**
+**What it does**
+- **Alerts you when you're addressed.** A strong vibration and notification (mirrored to a
+  Mi Band / Xiaomi watch) when someone says your name with a question. A gentle one when
+  you're mentioned or a topic you follow comes up.
+- **"Ce am pierdut?" (What did I miss?).** One tap shows what's being discussed now, the last
+  3 important points, and what's expected from you. It's kept ready in the background.
+- **"Ce să răspund?" (What should I answer?).** The question, what was said just before, and a
+  1–2 sentence answer based on your own notes. When the AI has no facts it says so and gives a
+  safe, non-committal line. It never invents numbers or promises.
+- **After the meeting:** your tasks (who asked, deadline), what you promised, a summary and
+  decisions. Shareable to Telegram / WhatsApp / e-mail.
+- **Health warning** if captions stop arriving, so it never fails silently.
+- History of every meeting, stored on the phone.
 
-<div align="center">
-  <img src="docs/images/app_mockup.jpg" alt="Live Meeting Copilot Mockup" width="750" style="border-radius: 16px; margin: 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
-</div>
+## How it hears the meeting
 
----
+Android doesn't let an app record another app's call audio. So the app turns on **Zoom's /
+Meet's own live captions** and reads them from the screen through an accessibility service.
+The AI then fixes recognition mistakes (names, diacritics, punctuation) in the background,
+using the names and terms from Settings.
 
-## 🎯 The Core Problem & Solution
+Limits that follow from this:
+- Captions must be **on (CC) and in Romanian** in Zoom/Meet, and the meeting must be **on screen**.
+  The app keeps the screen awake while you're in a meeting.
+- Accuracy is that of Zoom's/Meet's speech recognition, improved by the AI cleanup.
+- The exact screen element holding the captions differs between app versions. The app learns
+  it automatically (the region that keeps changing with sentences). If it doesn't, the
+  diagnostic log shows why (see below).
 
-### The Challenge:
-1. **Dual Meetings:** The user is physically in an in-person meeting while also connected to an online meeting (Zoom/Google Meet/Teams) on their phone or laptop.
-2. **The "Single Participant" Rule:** In the online meeting, **there must strictly be ONLY ONE user account visible**—no suspicious bots or duplicate accounts in the participant list!
-3. **Immediate Panic Relief:** When someone in the online meeting suddenly asks: *"Ce părere ai despre termenul de vineri?"*, the user needs to know immediately what was asked and have the exact 1–2 sentence professional reply ready to read out loud.
+## Install on the phone
 
-### The Solution:
-- **Discreet Companion Interface:** Runs either on the phone via mobile browser/PWA or as an Android floating overlay bubble directly over Zoom.
-- **Real-Time Romanian STT:** Transcribes the meeting conversation with low latency and highlights when the user is addressed.
-- **💡 "Ce să răspund?" (Lifesaver Button):** Tapping the button feeds the last 3–5 minutes of meeting context to a fast LLM (Gemini 2.5 Flash / Smart Heuristic engine) which formulates a tailored, natural, professional Romanian spoken response in under a second.
-- **Long-Term Meeting Memory:** Stores complete timestamped transcripts, AI answer history, and generates executive summaries and action items.
+1. Download the latest `asistent-sedinte-*.apk` from
+   [Releases](https://github.com/vicuvi1/Live-Meeting-Answer-/releases/latest) on the phone and
+   install it (allow installing from the browser when asked).
+2. Open **Asistent Ședințe**. The **Pregătire** card lists what's left:
+   - **Citirea subtitrărilor:** Accessibility → Downloaded apps → Asistent Ședințe → On.
+     If it's greyed out: App info → ⋮ (top right) → **Allow restricted settings**, then retry.
+   - **Notificări:** allow.
+   - **Setări → Despre tine:** her name, other forms of it, notes (role, projects, facts),
+     colleagues' names and terms, topics to follow.
+   - **Setări → AI:** a Gemini key (free at aistudio.google.com/apikey) or an OpenRouter key,
+     then **Testează cheia**.
+3. **Setări → Telefon Xiaomi:** Autostart → On, Battery → No restrictions, and lock the app in Recents.
+4. Watch alerts: Mi Fitness → app notifications → enable Asistent Ședințe.
+5. **Setări → Test fără ședință:** send a line like "Maria, poți să ne spui când e gata raportul?".
+   This checks the vibration, the answer and the summary without a real meeting.
 
----
+In a meeting: join in Zoom/Meet, tap **CC**, choose Romanian. The bubble turns green (listening),
+amber (mentioned or topic) or red (question). Tap it for the panel.
 
-## 🏗️ System Architecture
+Updates: the app checks GitHub and shows **Descarcă actualizarea**. Every build on `main`
+publishes a signed APK that installs over the previous one, keeping all data.
+
+## If captions aren't picked up
+
+Settings → Diagnostic → turn on **Jurnal diagnostic**, join a meeting with captions on, and tap
+**Captură diagnostic** in the bubble panel a couple of times. Then **Exportă jurnalul** and send
+the file. It shows exactly what Zoom/Meet put on screen. Lines marked `*` come from the element
+the app locked onto. Keep the log private: it contains meeting text.
+
+## Development
 
 ```
-                  ┌─────────────────────────────────────┐
-                  │    Meeting Room / Zoom / Meet       │
-                  └──────────────────┬──────────────────┘
-                                     │ Romanian Audio Stream
-                                     ▼
-        ┌─────────────────────────────────────────────────────────┐
-        │            FastAPI Async Backend Engine                 │
-        │                                                         │
-        │  • WebSocket Streaming & Session Manager                │
-        │  • Keyword & Question Detector (Regex / Romanian NLP)   │
-        │  • STT Bridge (Deepgram Nova-2 / Web Speech ro-RO)      │
-        │  • Lifesaver LLM Engine (Gemini 2.5 Flash / Heuristic)  │
-        │  • Persistent SQLite Database (SQLAlchemy + aiosqlite)  │
-        └────────────────────────────┬────────────────────────────┘
-                                     │ Bidirectional WebSocket
-                                     ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        User Interface Layer                            │
-│                                                                        │
-│  📱 Mobile Web App (PWA)               🤖 Android Native Companion     │
-│  • Senior-friendly, high-contrast      • SYSTEM_ALERT_WINDOW chat head │
-│  • Live auto-scrolling Romanian subs   • Floats directly over Zoom     │
-│  • Tactile "Ce să răspund?" button     • MediaProjection internal      │
-│  • Device vibration alerts              audio capture                  │
-│  • Romanian Text-To-Speech (earphone)  • One-touch answer card         │
-│  • Meeting dialogue test simulator                                     │
-│  • Meeting History, Search & Summaries                                 │
-└────────────────────────────────────────────────────────────────────────┘
+cd android
+./gradlew testDebugUnitTest assembleDebug
 ```
 
----
+- `caption/`: the accessibility service, the floating bubble, and `CaptionAssembler` (turns
+  changing on-screen captions into final sentences; unit-tested).
+- `engine/`: meeting session, name/question alerts, rolling digest, answers, summary.
+- `ai/`: Gemini / OpenRouter client and prompts. `data/`: SQLite + settings.
+- `ui/`: Compose screens (Acum, Istoric, Setări).
 
-## 🚀 Quick Start (Run in 2 Minutes)
-
-### Prerequisites:
-- **Node.js** (v18+)
-- **Python** (3.11+)
-
-### 1. Clone the Repository:
-```bash
-git clone https://github.com/vicuvi1/Live-Meeting-Answer-.git
-cd Live-Meeting-Answer-
-```
-
-### 2. Automated One-Click Start (Windows):
-Double-click `start_dev.bat` or run in PowerShell:
-```powershell
-.\start_dev.ps1
-```
-
-### Or Start Manually:
-
-#### Backend:
-```bash
-# Set up virtual environment
-python -m venv .venv
-
-# Activate venv:
-# Windows: .venv\Scripts\activate
-# Linux/Mac: source .venv/bin/activate
-
-# Install dependencies
-pip install -r backend/requirements.txt
-
-# Run the backend
-cd backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-#### Frontend:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open **`http://localhost:5173`** on your computer, or open **`http://<YOUR_COMPUTER_LOCAL_IP>:5173`** directly on the phone connected to the same WiFi.
-
----
-
-## 🎮 How to Test Without a Real Meeting (Built-in Simulator)
-
-The app comes with an interactive **Romanian Business Meeting Dialogue Simulator**:
-1. Click **"Simulează Dialog"** in the top bar.
-2. Select a scenario:
-   - *Discuție Buget & Resurse (T4)*
-   - *Termen Livrare Proiect & Raport*
-   - *Validare Strategie Echipă*
-3. Click **"Redă Automat"** or **"Pasul Următor"**.
-4. Watch the live subtitles roll in Romanian. When the colleague says: *"Ce părere ai despre estimările de buget?"*, notice:
-   - The line glows in bright amber/gold.
-   - The phone gives a subtle vibration alert.
-   - The big **"💡 Ce să răspund acum?"** button pulses.
-5. Tap the button—the AI provides the exact natural sentence for the user to read out loud!
-
----
-
-## 🤖 Android Native Floating Overlay (Over Zoom)
-
-The repository includes the complete Kotlin Android project inside `/android`:
-- **Floating Chat Head:** Uses `SYSTEM_ALERT_WINDOW` to display a draggable floating icon on top of the native Zoom or Google Meet app.
-- **Audio Service:** Hooks into Android 10+ `AudioPlaybackCaptureConfiguration` via `MediaProjection`.
-- **Zero Zoom Footprint:** Only the real user appears in the call because the overlay runs locally on the same device.
-
-To build the APK:
-1. Open the `/android` folder in **Android Studio**.
-2. Build & Run or select **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
-3. Install the APK on her phone and grant the *"Display over other apps"* permission.
-
----
-
-## ⚙️ Configuration & Environment Variables
-
-Copy `backend/.env.example` to `backend/.env` or configure directly from the in-app **Settings Modal**:
-
-```ini
-TARGET_NAME=User
-DEFAULT_LANGUAGE=ro
-DATABASE_URL=sqlite+aiosqlite:///./data/copilot.db
-
-# Provider Choice: "gemini" or "openrouter"
-DEFAULT_PROVIDER=gemini
-
-# Option 1: Google Gemini (Free tier available at https://aistudio.google.com/)
-GEMINI_API_KEY=your_gemini_api_key_here
-LLM_MODEL=gemini-2.5-flash
-
-# Option 2: OpenRouter (Free & Paid models like Gemini, Llama 3.3, DeepSeek at https://openrouter.ai/)
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free
-
-# Optional: Add Deepgram API key for server-side Romanian STT
-DEEPGRAM_API_KEY=your_deepgram_api_key_here
-```
-
-### 🆓 Supported Free Models:
-- **Google Gemini Direct:** `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-1.5-flash-8b` (free on Google AI Studio).
-- **OpenRouter Free Tier:** `google/gemini-2.0-flash-exp:free`, `meta-llama/llama-3.3-70b-instruct:free`, `mistralai/mistral-7b-instruct:free` (100% free via OpenRouter key).
-- **Instant Connection Test:** In the app Settings, click **"⚡ Testează Cheia & Conexiunea"** to verify your key and measure model response time.
-
----
-
-## 🧪 Running Automated Tests
-
-To run the backend test suite:
-```bash
-cd backend
-pytest
-```
-*All tests verify database lifecycle, Romanian keyword/question detection, and AI response generation.*
-
----
-
-## 📄 License
-MIT License. Built with ❤️ to make meeting multitasking effortless and stress-free.
+Release signing: CI uses the `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and
+`KEY_PASSWORD` secrets. Local release builds read an untracked `android/keystore.properties`.
+Keep a backup of the keystore: without it, future updates can't be installed over the app.

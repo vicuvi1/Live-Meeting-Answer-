@@ -1,6 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Meeting Copilot</string>
-    <string name="btn_start_overlay">Pornește Asistentul Peste Zoom</string>
-    <string name="btn_stop_overlay">Oprește Asistentul</string>
-    <string name="txt_permission_needed">Este necesară permisiunea de afișare peste alte aplicații pentru a funcționa peste Zoom.</string>
+    <string name="app_name">Asistent Ședințe</string>
+    <string name="service_description">Citește subtitrările afișate de Zoom sau Google Meet, ca să te anunțe când ești întrebată și să-ți arate ce ai pierdut. Textul rămâne pe telefon; doar fragmentele necesare sunt trimise la AI-ul ales în Setări.</string>
 </resources>

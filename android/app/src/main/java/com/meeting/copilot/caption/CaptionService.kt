@@ -1,0 +1,249 @@
+package com.meeting.copilot.caption
+
+import android.accessibilityservice.AccessibilityService
+import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
+import android.widget.Toast
+import com.meeting.copilot.App
+import com.meeting.copilot.engine.Status
+import com.meeting.copilot.util.DiagLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+
+/**
+ * Reads the text Zoom / Meet / Live Caption draw on screen, groups it by screen element and
+ * hands it to the caption assembler. Also hosts the floating bubble, because an accessibility
+ * service can draw over other apps without extra permissions and Android keeps it running.
+ */
+class CaptionService : AccessibilityService() {
+
+    companion object {
+        const val LIVE_CAPTION = "com.google.android.as"
+        val MEETING_PACKAGES = setOf(
+            "us.zoom.videomeetings",
+            "com.google.android.apps.tachyon",
+            "com.google.android.apps.meetings",
+            "com.microsoft.teams",
+            LIVE_CAPTION,
+        )
+        private val IGNORED_PACKAGES = setOf("com.android.systemui", "com.miui.home", "com.mi.android.globallauncher")
+        private val CAPTION_ID_HINTS = listOf("caption", "subtitle", "transcri", "closedcc", "cc_text", "livecc")
+        private val HAS_LETTER = Regex("\\p{L}")
+        private val ONLY_NUMBERS = Regex("^[\\d:.,\\s%]+$")
+        private const val SCAN_DELAY_MS = 200L
+        private const val POLL_MS = 1_500L
+        private const val MAX_NODES = 4_000
+        private const val MAX_DEPTH = 60
+
+        private val _connected = MutableStateFlow(false)
+        val connected: StateFlow<Boolean> = _connected
+
+        @Volatile
+        var instance: CaptionService? = null
+            private set
+    }
+
+    private class RegionBuilder(val key: String, val explicit: Boolean) {
+        val texts = mutableListOf<String>()
+        var speaker: String? = null
+        fun build() = CaptionAssembler.Region(key, texts.joinToString("\n"), speaker, explicit)
+    }
+
+    private val app get() = App.instance
+    private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var scanPending = false
+    private var overlay: Overlay? = null
+    private var allAppsMode: Boolean? = null
+    private val diagLastText = HashMap<String, String>()
+
+    private val poll = object : Runnable {
+        override fun run() {
+            val state = app.engine.state.value
+            if (state.meetingVisible || state.status == Status.LISTENING) safeScan()
+            handler.postDelayed(this, POLL_MS)
+        }
+    }
+
+    override fun onServiceConnected() {
+        instance = this
+        _connected.value = true
+        applyPackageFilter()
+        val overlay = Overlay(this, app.engine, app.prefs, onDump = { dump() })
+        this.overlay = overlay
+        scope.launch { app.engine.state.collect { overlay.render(it) } }
+        scope.launch { app.engine.openPanel.collect { overlay.openPanel() } }
+        scope.launch {
+            app.prefs.version.collect {
+                applyPackageFilter()
+                overlay.render(app.engine.state.value)
+            }
+        }
+        handler.postDelayed(poll, POLL_MS)
+        if (app.prefs.diagnostics) DiagLog.log("SERVICE CONNECTED")
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (scanPending) return
+        scanPending = true
+        handler.postDelayed({
+            scanPending = false
+            safeScan()
+        }, SCAN_DELAY_MS)
+    }
+
+    override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        overlay?.destroy()
+        overlay = null
+        scope.cancel()
+        if (instance === this) instance = null
+        _connected.value = false
+        super.onDestroy()
+    }
+
+    /** In "all apps" diagnostic mode the service listens everywhere, to discover other caption overlays. */
+    private fun applyPackageFilter() {
+        val wantAll = app.prefs.diagnostics && app.prefs.diagnosticsAllApps
+        if (allAppsMode == wantAll) return
+        val info = serviceInfo ?: return
+        info.packageNames = if (wantAll) null else MEETING_PACKAGES.toTypedArray()
+        serviceInfo = info
+        allAppsMode = wantAll
+    }
+
+    private fun safeScan() {
+        try {
+            scan()
+        } catch (e: Exception) {
+            DiagLog.log("SCAN ERROR ${e.stackTraceToString()}")
+        }
+    }
+
+    private fun scan() {
+        val allWindows = try {
+            windows
+        } catch (e: Exception) {
+            return
+        }
+        val diagnostics = app.prefs.diagnostics
+        val allApps = diagnostics && app.prefs.diagnosticsAllApps
+        val builders = LinkedHashMap<String, RegionBuilder>()
+        val budget = intArrayOf(MAX_NODES)
+        var meetingPackage: String? = null
+
+        for (window in allWindows) {
+            if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
+                window.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+            ) continue
+            val root = window.root ?: continue
+            val pkg = root.packageName?.toString() ?: continue
+            if (pkg == packageName || pkg in IGNORED_PACKAGES) continue
+            val isMeeting = pkg in MEETING_PACKAGES
+            if (!isMeeting && !allApps) continue
+            if (isMeeting && pkg != LIVE_CAPTION && meetingPackage == null) meetingPackage = pkg
+            collect(root, pkg, builders, 0, budget)
+        }
+
+        val regions = builders.values.map { it.build() }
+        if (diagnostics) logRegions(regions)
+        app.engine.onScan(meetingPackage != null, meetingPackage)
+        app.engine.assembler.observe(regions.filter { it.key.substringBefore('|') in MEETING_PACKAGES })
+    }
+
+    private fun collect(
+        node: AccessibilityNodeInfo,
+        pkg: String,
+        builders: MutableMap<String, RegionBuilder>,
+        depth: Int,
+        budget: IntArray,
+    ) {
+        if (depth > MAX_DEPTH || budget[0]-- <= 0) return
+        if (!node.isVisibleToUser) return
+        val text = node.text?.toString()?.trim()
+        if (!text.isNullOrEmpty() && HAS_LETTER.containsMatchIn(text) && !ONLY_NUMBERS.matches(text)) {
+            val viewId = node.viewIdResourceName
+            val cls = node.className?.toString()?.substringAfterLast('.') ?: "View"
+            val key = "$pkg|" + (viewId ?: "$cls@$depth")
+            val explicit = pkg == LIVE_CAPTION ||
+                (viewId != null && CAPTION_ID_HINTS.any { viewId.lowercase().contains(it) })
+            val builder = builders.getOrPut(key) { RegionBuilder(key, explicit) }
+            builder.texts.add(text)
+            if (builder.speaker == null && (explicit || key == app.engine.assembler.activeKey)) {
+                builder.speaker = findSpeaker(node, text)
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collect(child, pkg, builders, depth + 1, budget)
+        }
+    }
+
+    /** Meeting apps usually show the speaker's name as a short label next to the caption text. */
+    private fun findSpeaker(node: AccessibilityNodeInfo, captionText: String): String? {
+        val parent = node.parent ?: return null
+        for (i in 0 until parent.childCount) {
+            val sibling = parent.getChild(i) ?: continue
+            if (sibling == node) continue
+            val label = sibling.text?.toString()?.trim() ?: continue
+            if (label.length !in 2..40 || label == captionText) continue
+            if (label.split(' ').size > 4 || label.any { it.isDigit() }) continue
+            if (!label.first().isUpperCase() || label.last() in ".?!,") continue
+            return label
+        }
+        return null
+    }
+
+    private fun logRegions(regions: List<CaptionAssembler.Region>) {
+        val active = app.engine.assembler.activeKey
+        for (region in regions) {
+            if (diagLastText[region.key] == region.text) continue
+            diagLastText[region.key] = region.text
+            val mark = if (region.key == active) "*" else if (region.explicit) "!" else " "
+            DiagLog.log("$mark ${region.key} speaker=${region.speaker} :: ${region.text.takeLast(400).replace('\n', '⏎')}")
+        }
+        if (diagLastText.size > 3000) diagLastText.clear()
+    }
+
+    /** Full view tree of every window, to find the exact caption element of a new app version. */
+    fun dump() {
+        val out = StringBuilder("=== DUMP ===\n")
+        val allWindows = try { windows } catch (e: Exception) { emptyList() }
+        for (window in allWindows) {
+            out.append("WINDOW type=${window.type} title=${window.title} layer=${window.layer}\n")
+            val root = window.root ?: continue
+            dumpNode(root, 1, out)
+        }
+        out.append("=== END DUMP ===")
+        DiagLog.log(out.toString())
+        Toast.makeText(this, "Captură salvată în jurnalul de diagnostic", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun dumpNode(node: AccessibilityNodeInfo, depth: Int, out: StringBuilder) {
+        if (depth > MAX_DEPTH) return
+        val bounds = Rect().also { node.getBoundsInScreen(it) }
+        out.append("  ".repeat(depth)).append(node.className?.toString()?.substringAfterLast('.') ?: "?")
+            .append(" pkg=").append(node.packageName)
+        node.viewIdResourceName?.let { out.append(" id=").append(it) }
+        node.text?.let { out.append(" text=\"").append(it).append('"') }
+        node.contentDescription?.let { out.append(" desc=\"").append(it).append('"') }
+        out.append(" bounds=").append(bounds.toShortString())
+        if (!node.isVisibleToUser) out.append(" (hidden)")
+        out.append('\n')
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            dumpNode(child, depth + 1, out)
+        }
+    }
+}
