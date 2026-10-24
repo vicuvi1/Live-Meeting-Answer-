@@ -145,7 +145,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
         SettingsGroup("Alerte", Icons.Filled.Notifications, Tone.Warning) {
             PrefSwitch("Vibrații", "Diferite pentru întrebare, mențiune, subiect", prefs.vibrate) { prefs.vibrate = it }
             PrefSwitch("Citește întrebarea în cască", "Doar când sunt conectate căști", prefs.whisperQuestion) { prefs.whisperQuestion = it }
-            PrefSwitch("Bula peste Zoom / Meet", "Arată rezumatul și răspunsul peste ședință", prefs.showBubble) { prefs.showBubble = it }
+            PrefSwitch("Insula de sus (peste Zoom / Meet)", "Arată timpul, alertele și răspunsul în partea de sus", prefs.showBubble) { prefs.showBubble = it }
             Text(
                 "Ceas sau brățară Xiaomi: în Mi Fitness → Notificări aplicații, pornește Asistent Ședințe.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Faint, modifier = Modifier.padding(top = 6.dp),
