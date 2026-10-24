@@ -23,6 +23,7 @@ class LlmClient(private val prefs: Prefs) {
         withContext(Dispatchers.IO) {
             if (!isConfigured()) throw LlmException("Lipsește cheia AI (Setări → AI).")
             var attempt = 0
+            var switchedModel = false
             while (true) {
                 try {
                     val text = if (prefs.provider == Prefs.PROVIDER_OPENROUTER) {
@@ -34,6 +35,14 @@ class LlmClient(private val prefs: Prefs) {
                 } catch (e: RetryableException) {
                     if (attempt++ >= 1) throw LlmException(e.message ?: "Serviciul AI e ocupat.")
                     delay(1_500)
+                } catch (e: ModelNotFoundException) {
+                    // Google retires models regularly: switch to its newest Flash model and retry once.
+                    val replacement = if (prefs.provider == Prefs.PROVIDER_GEMINI && !switchedModel) currentGeminiFlash() else null
+                    if (replacement == null || replacement == prefs.geminiModel.trim()) {
+                        throw LlmException("Modelul nu mai e disponibil: ${e.message}. Schimbă numele modelului în Setări.")
+                    }
+                    prefs.geminiModel = replacement
+                    switchedModel = true
                 }
             }
             @Suppress("UNREACHABLE_CODE")
@@ -41,9 +50,27 @@ class LlmClient(private val prefs: Prefs) {
         }
 
     private class RetryableException(message: String) : Exception(message)
+    private class ModelNotFoundException(message: String) : Exception(message)
+
+    /** Asks Gemini which models this key can use and picks the newest regular Flash model. */
+    private fun currentGeminiFlash(): String? = try {
+        val connection = (URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200").openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("x-goog-api-key", prefs.geminiKey.trim())
+        }
+        try {
+            if (connection.responseCode != 200) null
+            else pickFlashModel(JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }))
+        } finally {
+            connection.disconnect()
+        }
+    } catch (_: Exception) {
+        null
+    }
 
     private fun gemini(system: String, user: String, maxTokens: Int, timeoutMs: Int): String {
-        val model = prefs.geminiModel.trim().ifEmpty { "gemini-2.5-flash" }
+        val model = prefs.geminiModel.trim().ifEmpty { "gemini-3.8-flash" }
         val generation = JSONObject()
             .put("temperature", 0.3)
             .put("maxOutputTokens", maxTokens)
@@ -120,7 +147,8 @@ class LlmClient(private val prefs: Prefs) {
             when {
                 code == 429 -> throw RetryableException("Limită de cereri atinsă la serviciul AI ($message).")
                 code >= 500 -> throw RetryableException("Serviciul AI are o problemă ($code).")
-                code == 400 || code == 404 -> throw LlmException("Cerere respinsă ($code): $message. Verifică numele modelului.")
+                code == 404 -> throw ModelNotFoundException(message)
+                code == 400 -> throw LlmException("Cerere respinsă ($code): $message. Verifică numele modelului.")
                 code == 401 || code == 403 -> throw LlmException("Cheia AI nu e acceptată ($code): $message")
                 else -> throw LlmException("Eroare AI $code: $message")
             }
@@ -143,6 +171,27 @@ class LlmClient(private val prefs: Prefs) {
     }
 
     companion object {
+        private val FLASH_VERSION = Regex("^gemini-(\\d+(?:\\.\\d+)?)-flash(-preview.*)?$")
+
+        /**
+         * From a Gemini ListModels reply, the newest "gemini-X-flash" that supports
+         * generateContent; stable versions beat previews; lite/image/audio variants are skipped.
+         */
+        fun pickFlashModel(list: JSONObject): String? {
+            val models = list.optJSONArray("models") ?: return null
+            data class Candidate(val id: String, val version: Double, val preview: Boolean)
+            val candidates = (0 until models.length()).mapNotNull { i ->
+                val model = models.optJSONObject(i) ?: return@mapNotNull null
+                val id = model.optString("name").removePrefix("models/")
+                val methods = model.optJSONArray("supportedGenerationMethods")
+                val generates = methods != null && (0 until methods.length()).any { methods.optString(it) == "generateContent" }
+                val match = FLASH_VERSION.matchEntire(id) ?: return@mapNotNull null
+                if (!generates) return@mapNotNull null
+                Candidate(id, match.groupValues[1].toDouble(), match.groupValues[2].isNotEmpty())
+            }
+            return candidates.sortedWith(compareBy<Candidate> { it.preview }.thenByDescending { it.version }).firstOrNull()?.id
+        }
+
         /** Accepts plain JSON, JSON inside ``` fences, or JSON with text around it. */
         fun parseJson(text: String): JSONObject {
             val start = text.indexOf('{')

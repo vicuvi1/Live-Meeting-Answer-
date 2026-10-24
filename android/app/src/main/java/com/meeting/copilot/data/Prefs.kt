@@ -22,7 +22,8 @@ class Prefs(context: Context) {
 
     var provider by text("provider", PROVIDER_GEMINI)
     var geminiKey by text("gemini_key", "")
-    var geminiModel by text("gemini_model", "gemini-2.5-flash")
+    /** Replaced automatically with Google's newest Flash model when this one is retired. */
+    var geminiModel by text("gemini_model", "gemini-3.8-flash")
     var openRouterKey by text("openrouter_key", "")
     var openRouterModel by text("openrouter_model", "google/gemini-2.5-flash")
 

@@ -95,7 +95,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
             }
             if (provider == Prefs.PROVIDER_GEMINI) {
                 PrefField("Cheie Gemini", prefs.geminiKey, secret = true) { prefs.geminiKey = it }
-                PrefField("Model", prefs.geminiModel, hint = "gemini-2.5-flash") { prefs.geminiModel = it }
+                PrefField("Model (se actualizează singur)", prefs.geminiModel, hint = "gemini-3.8-flash") { prefs.geminiModel = it }
                 TextButton(onClick = { Setup.openUrl(context, "https://aistudio.google.com/apikey") }) {
                     Text("Obține o cheie gratuită (aistudio.google.com)")
                 }
@@ -113,7 +113,8 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                     val started = System.currentTimeMillis()
                     testResult = try {
                         app.llm.json("Răspunde doar cu JSON.", "Returnează exact {\"ok\":true}", maxTokens = 50, timeoutMs = 20_000)
-                        "✅ Funcționează (${System.currentTimeMillis() - started} ms)"
+                        val model = if (prefs.provider == Prefs.PROVIDER_GEMINI) prefs.geminiModel else prefs.openRouterModel
+                        "✅ Funcționează: $model, ${System.currentTimeMillis() - started} ms"
                     } catch (e: Exception) {
                         "❌ ${e.message}"
                     }
@@ -236,7 +237,8 @@ private fun PrefField(
     secret: Boolean = false,
     onChange: (String) -> Unit,
 ) {
-    var value by remember { mutableStateOf(initial) }
+    // Keyed on the stored value so a change made by the app (model auto-switch) shows up.
+    var value by remember(initial) { mutableStateOf(initial) }
     var reveal by remember { mutableStateOf(false) }
     OutlinedTextField(
         value = value,
