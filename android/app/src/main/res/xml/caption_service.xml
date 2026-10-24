@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Events only from meeting apps (and Live Caption) keep battery use low.
+     isAccessibilityTool lets the service see views apps mark as data-sensitive. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewTextChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:isAccessibilityTool="true"
+    android:notificationTimeout="100"
+    android:packageNames="us.zoom.videomeetings,com.google.android.apps.tachyon,com.google.android.apps.meetings,com.microsoft.teams,com.google.android.as"
+    android:description="@string/service_description" />
