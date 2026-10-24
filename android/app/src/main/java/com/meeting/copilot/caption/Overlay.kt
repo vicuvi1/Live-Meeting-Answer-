@@ -152,7 +152,7 @@ class Overlay(
         lastState = state
         val inMeeting = state.meetingVisible || state.status == Status.LISTENING
         if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the island again
-        val show = prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
+        val show = prefs.active && prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
         if (!show) {
             removeIsland()
             return

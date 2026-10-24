@@ -147,7 +147,7 @@ class MeetingEngine(
         main.launch(dbThread) { runCatching { db.closeDanglingMeetings() } }
         main.launch {
             while (isActive) {
-                delay(500)
+                delay(if (prefs.active) 500 else 5_000) // switched off: barely wake up
                 try {
                     tick()
                 } catch (e: Exception) {
@@ -281,6 +281,19 @@ class MeetingEngine(
         _state.update { it.copy(answer = null, answerError = null, answerLoading = false, alert = AlertLevel.NONE) }
     }
 
+    /**
+     * The on/off switch. Off: nothing listens, the service ignores the screen and the island is
+     * gone. A meeting in progress is saved and summarized as usual.
+     */
+    fun setActive(on: Boolean) {
+        if (prefs.active == on) return
+        prefs.active = on
+        if (!on) endMeeting(byUser = false)
+        lastMeetingVisibleAt = 0L
+        meetingVisibleSince = 0L
+        refreshStatus(now())
+    }
+
     fun endMeeting(byUser: Boolean = true) {
         if (!sessionActive) return
         assembler.reset() // finalizes the last words while the session is still open
@@ -294,6 +307,7 @@ class MeetingEngine(
         dbIds.clear()
         _state.value = UiState(meetingVisible = _state.value.meetingVisible, summaryRunning = llm.isConfigured() && snapshot.size >= 3)
         refreshStatus(endedAt)
+        if (prefs.autoOff && prefs.active) setActive(false) // "Se oprește singur după ședință"
 
         main.launch {
             val meetingId = withContext(dbThread) {
@@ -458,8 +472,12 @@ class MeetingEngine(
     }
 
     private fun tick() {
-        assembler.tick()
         val now = now()
+        if (!prefs.active) {
+            refreshStatus(now)
+            return
+        }
+        assembler.tick()
         refreshStatus(now)
         val visible = now - lastMeetingVisibleAt < 5_000
         if (!visible) captionsHintShown = false

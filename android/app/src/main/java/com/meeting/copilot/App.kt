@@ -7,6 +7,8 @@ import com.meeting.copilot.data.Prefs
 import com.meeting.copilot.engine.Alerts
 import com.meeting.copilot.engine.MeetingEngine
 import com.meeting.copilot.util.DiagLog
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 
 class App : Application() {
     lateinit var prefs: Prefs
@@ -32,6 +34,16 @@ class App : Application() {
         db = Db(this)
         llm = LlmClient(prefs)
         engine = MeetingEngine(prefs, db, llm, Alerts(this, prefs))
+        // Keep the quick-panel on/off button in sync when the switch changes in the app.
+        var lastActive = prefs.active
+        MainScope().launch {
+            prefs.version.collect {
+                if (prefs.active != lastActive) {
+                    lastActive = prefs.active
+                    PowerTileService.refresh(this@App)
+                }
+            }
+        }
     }
 
     companion object {
