@@ -84,6 +84,13 @@ class DetectorTest {
     }
 
     @Test
+    fun readsRetryDelayFromQuotaErrors() {
+        assertEquals((13 * 3600 + 38 * 60 + 11) * 1000L + 23, LlmClient.retryDelayMs("Please retry in 13h38m11.023975365s."))
+        assertEquals(20_000L, LlmClient.retryDelayMs("Quota exceeded. Please retry in 20s."))
+        assertEquals(null, LlmClient.retryDelayMs("Quota exceeded for metric."))
+    }
+
+    @Test
     fun answerFallsBackToSafeLine() {
         val answer = Prompts.parseAnswer(LlmClient.parseJson("{\"question\":\"Când e gata?\",\"confident\":false}"), "trigger", 5)
         assertEquals(Prompts.SAFE_LINE, answer.answer)

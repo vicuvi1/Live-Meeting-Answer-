@@ -11,6 +11,7 @@ import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
+import java.util.concurrent.ConcurrentHashMap
 
 class LlmException(message: String) : Exception(message)
 
@@ -19,38 +20,72 @@ class LlmClient(private val prefs: Prefs) {
 
     fun isConfigured(): Boolean = prefs.hasAiKey()
 
+    /** Until when a provider is out of quota (daily free limit, or no credit), and why. */
+    private val blockedUntil = ConcurrentHashMap<String, Long>()
+    private val blockedReason = ConcurrentHashMap<String, String>()
+
+    /**
+     * Sends one request. When the chosen provider is out of quota and the other provider's key
+     * is filled in too, it uses that one instead; an exhausted provider isn't asked again until
+     * its limit resets, so the app doesn't fail every 90 seconds.
+     */
     suspend fun json(system: String, user: String, maxTokens: Int, timeoutMs: Int = 25_000): JSONObject =
         withContext(Dispatchers.IO) {
             if (!isConfigured()) throw LlmException("Lipsește cheia AI (Setări → AI).")
-            var attempt = 0
-            var switchedModel = false
-            while (true) {
+            var lastError: String? = null
+            for (provider in providerOrder()) {
+                if (System.currentTimeMillis() < (blockedUntil[provider] ?: 0L)) {
+                    lastError = blockedReason[provider]
+                    continue
+                }
                 try {
-                    val text = if (prefs.provider == Prefs.PROVIDER_OPENROUTER) {
-                        openRouter(system, user, maxTokens, timeoutMs)
-                    } else {
-                        gemini(system, user, maxTokens, timeoutMs)
-                    }
-                    return@withContext parseJson(text)
-                } catch (e: RetryableException) {
-                    if (attempt++ >= 1) throw LlmException(e.message ?: "Serviciul AI e ocupat.")
-                    delay(1_500)
-                } catch (e: ModelNotFoundException) {
-                    // Google retires models regularly: switch to its newest Flash model and retry once.
-                    val replacement = if (prefs.provider == Prefs.PROVIDER_GEMINI && !switchedModel) currentGeminiFlash() else null
-                    if (replacement == null || replacement == prefs.geminiModel.trim()) {
-                        throw LlmException("Modelul nu mai e disponibil: ${e.message}. Schimbă numele modelului în Setări.")
-                    }
-                    prefs.geminiModel = replacement
-                    switchedModel = true
+                    return@withContext call(provider, system, user, maxTokens, timeoutMs)
+                } catch (e: QuotaException) {
+                    blockedUntil[provider] = System.currentTimeMillis() + e.waitMs
+                    blockedReason[provider] = e.message.orEmpty()
+                    lastError = e.message
                 }
             }
-            @Suppress("UNREACHABLE_CODE")
-            throw IllegalStateException()
+            throw LlmException(lastError ?: "Serviciul AI nu e disponibil acum.")
         }
+
+    /** The chosen provider first, the other one as backup when its key is also filled in. */
+    private fun providerOrder(): List<String> {
+        val primary = prefs.provider
+        val backup = if (primary == Prefs.PROVIDER_OPENROUTER) Prefs.PROVIDER_GEMINI else Prefs.PROVIDER_OPENROUTER
+        val backupKey = if (backup == Prefs.PROVIDER_GEMINI) prefs.geminiKey else prefs.openRouterKey
+        return if (backupKey.isNotBlank()) listOf(primary, backup) else listOf(primary)
+    }
+
+    private suspend fun call(provider: String, system: String, user: String, maxTokens: Int, timeoutMs: Int): JSONObject {
+        var attempt = 0
+        var switchedModel = false
+        while (true) {
+            try {
+                val text = if (provider == Prefs.PROVIDER_OPENROUTER) {
+                    openRouter(system, user, maxTokens, timeoutMs)
+                } else {
+                    gemini(system, user, maxTokens, timeoutMs)
+                }
+                return parseJson(text)
+            } catch (e: RetryableException) {
+                if (attempt++ >= 1) throw LlmException(e.message ?: "Serviciul AI e ocupat.")
+                delay(1_500)
+            } catch (e: ModelNotFoundException) {
+                // Google retires models regularly: switch to its newest Flash model and retry once.
+                val replacement = if (provider == Prefs.PROVIDER_GEMINI && !switchedModel) currentGeminiFlash() else null
+                if (replacement == null || replacement == prefs.geminiModel.trim()) {
+                    throw LlmException("Modelul nu mai e disponibil: ${e.message?.take(120)}. Schimbă numele modelului în Setări.")
+                }
+                prefs.geminiModel = replacement
+                switchedModel = true
+            }
+        }
+    }
 
     private class RetryableException(message: String) : Exception(message)
     private class ModelNotFoundException(message: String) : Exception(message)
+    private class QuotaException(message: String, val waitMs: Long) : Exception(message)
 
     /** Asks Gemini which models this key can use and picks the newest regular Flash model. */
     private fun currentGeminiFlash(): String? = try {
@@ -144,13 +179,19 @@ class LlmClient(private val prefs: Prefs) {
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code in 200..299) return JSONObject(text)
             val message = errorMessage(text)
+            val gemini = url.contains("googleapis")
             when {
-                code == 429 -> throw RetryableException("Limită de cereri atinsă la serviciul AI ($message).")
+                code == 402 -> throw QuotaException("Contul OpenRouter nu mai are credit. Adaugă credit pe openrouter.ai.", 30 * 60_000L)
+                code == 429 && (message.contains("quota", true) || message.contains("credit", true)) -> {
+                    val wait = retryDelayMs(message) ?: if (message.contains("minute", true)) 60_000L else 3_600_000L
+                    throw QuotaException(quotaMessage(gemini, wait), wait)
+                }
+                code == 429 -> throw RetryableException("Prea multe cereri deodată la serviciul AI.")
                 code >= 500 -> throw RetryableException("Serviciul AI are o problemă ($code).")
                 code == 404 -> throw ModelNotFoundException(message)
-                code == 400 -> throw LlmException("Cerere respinsă ($code): $message. Verifică numele modelului.")
-                code == 401 || code == 403 -> throw LlmException("Cheia AI nu e acceptată ($code): $message")
-                else -> throw LlmException("Eroare AI $code: $message")
+                code == 400 -> throw LlmException("Cerere respinsă: ${message.take(120)}. Verifică numele modelului.")
+                code == 401 || code == 403 -> throw LlmException("Cheia AI nu e acceptată. Verific-o în Setări → AI.")
+                else -> throw LlmException("Eroare AI $code: ${message.take(120)}")
             }
         } catch (e: SocketTimeoutException) {
             throw RetryableException("Serviciul AI nu a răspuns la timp.")
@@ -170,8 +211,28 @@ class LlmClient(private val prefs: Prefs) {
         text.take(200)
     }
 
+    private fun quotaMessage(gemini: Boolean, waitMs: Long): String {
+        val hours = waitMs / 3_600_000
+        val back = if (hours >= 1) "revine în ~$hours h" else "revine în ~${(waitMs / 60_000).coerceAtLeast(1)} min"
+        return if (gemini) {
+            "Limita gratuită Gemini s-a terminat ($back). Adaugă o cheie OpenRouter în Setări → AI ca să meargă mai departe."
+        } else {
+            "Limita OpenRouter a fost atinsă ($back)."
+        }
+    }
+
     companion object {
         private val FLASH_VERSION = Regex("^gemini-(\\d+(?:\\.\\d+)?)-flash(-preview.*)?$")
+        private val RETRY_IN = Regex("retry in (?:(\\d+)h)?(?:(\\d+)m(?!s))?(?:([\\d.]+)s)?", RegexOption.IGNORE_CASE)
+
+        /** "Please retry in 13h38m11.02s." -> milliseconds; null when the reply doesn't say. */
+        fun retryDelayMs(message: String): Long? {
+            val match = RETRY_IN.find(message) ?: return null
+            val (h, m, s) = match.destructured
+            val ms = (h.toLongOrNull() ?: 0) * 3_600_000 + (m.toLongOrNull() ?: 0) * 60_000 +
+                ((s.toDoubleOrNull() ?: 0.0) * 1000).toLong()
+            return ms.takeIf { it > 0 }
+        }
 
         /**
          * From a Gemini ListModels reply, the newest "gemini-X-flash" that supports

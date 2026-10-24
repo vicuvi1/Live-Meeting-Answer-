@@ -1,21 +1,33 @@
 package com.meeting.copilot.caption
 
-import android.animation.LayoutTransition
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
-import android.text.TextUtils
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.LinearInterpolator
+import android.view.animation.OvershootInterpolator
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -25,13 +37,17 @@ import com.meeting.copilot.engine.AlertLevel
 import com.meeting.copilot.engine.MeetingEngine
 import com.meeting.copilot.engine.Status
 import com.meeting.copilot.engine.UiState
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
- * Floating bubble over Zoom / Meet. Its colour says what's happening (green: listening,
- * amber: mentioned or a topic came up, red and pulsing: she was asked something). Tapping it
- * opens a panel with the suggested answer and "what did I miss"; it opens by itself on a question.
+ * A Dynamic-Island-style overlay wrapped around the front camera.
+ *
+ * Compact: a black pill with sound bars on the left (they move while people talk) and the
+ * meeting timer on the right, the camera hole sitting between them. When she is mentioned it
+ * stretches into a wider card for a few seconds; when she is asked something, or taps it, it
+ * grows down into the full panel with the suggested answer and "what did I miss".
  */
-
 class Overlay(
     private val context: Context,
     private val engine: MeetingEngine,
@@ -39,7 +55,6 @@ class Overlay(
     private val onDump: () -> Unit,
 ) {
     private object C {
-        val panel = Color.argb(248, 12, 16, 26)
         val card = Color.rgb(21, 27, 41)
         val border = Color.rgb(34, 43, 61)
         val text = Color.rgb(244, 246, 251)
@@ -54,10 +69,21 @@ class Overlay(
         val redStrong = Color.rgb(239, 68, 68)
         val redDeep = Color.rgb(63, 16, 16)
         val blue = Color.rgb(124, 167, 255)
-        val blueDeep = Color.rgb(20, 34, 63)
-        val idle = Color.rgb(71, 85, 105)
+        val idle = Color.rgb(100, 116, 139)
         val onAccent = Color.rgb(6, 17, 12)
-        val islandBorder = Color.rgb(40, 44, 56)
+        val islandEdge = Color.argb(28, 255, 255, 255)
+    }
+
+    private enum class Mode { COMPACT, ALERT, EXPANDED }
+
+    companion object {
+        /** True after she long-pressed the island; cleared when the meeting ends or from the app. */
+        val hidden = kotlinx.coroutines.flow.MutableStateFlow(false)
+        /** The app itself is open: it shows everything, so the island steps aside. */
+        val appVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+        /** How long a mention or topic keeps the island stretched before it shrinks back. */
+        private const val ALERT_PEEK_MS = 6_000L
     }
 
     private val wm = context.getSystemService(WindowManager::class.java)
@@ -65,23 +91,47 @@ class Overlay(
     private fun dp(value: Int) = (value * density).toInt()
     private val screenWidth get() = context.resources.displayMetrics.widthPixels
     private val screenHeight get() = context.resources.displayMetrics.heightPixels
+    private val handler = Handler(Looper.getMainLooper())
 
-    // The "island": a black pill at the top centre, around the front camera, like Dynamic Island.
-    private var bubble: LinearLayout? = null
-    private var islandDot: View? = null
-    private var islandTitle: TextView? = null
-    private var islandSubtitle: TextView? = null
+    // Geometry, measured from the camera cut-out when the island is created.
+    private var geometryWidth = 0
+    private var camCenterX = 0
+    private var camGap = 0
+    private var compactW = 0
+    private var compactH = 0
+    private var islandTop = 0
+    private var contentTop = 0
+
+    private var island: FrameLayout? = null
+    private var islandBg: GradientDrawable? = null
+    private var compactLayer: View? = null
+    private var waves: WaveView? = null
+    private var compactDot: View? = null
+    private var compactLabel: TextView? = null
+    private var alertLayer: View? = null
+    private var alertDot: View? = null
+    private var alertTitle: TextView? = null
+    private var alertBody: TextView? = null
+    private var expandedLayer: View? = null
+    private var panelContent: LinearLayout? = null
+    private var liveView: TextView? = null
+    private var lastPanelState: UiState? = null
+
+    private var mode = Mode.COMPACT
+    private var userExpanded = false
+    private var morph: ValueAnimator? = null
     private var pulse: ObjectAnimator? = null
-    private var dotPulse: ObjectAnimator? = null
-    private val bubbleParams = WindowManager.LayoutParams(
-        WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+    private var keepScreenOn = false
+    private var lastState: UiState? = null
+
+    private val params = WindowManager.LayoutParams(
+        0, 0,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
         PixelFormat.TRANSLUCENT,
     ).apply {
-        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        y = dp(6)
+        gravity = Gravity.TOP or Gravity.START
         layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= 30) {
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         } else {
@@ -89,185 +139,364 @@ class Overlay(
         }
     }
 
-    companion object {
-        /** True after she long-pressed the island; cleared when the meeting ends or from the app. */
-        val hidden = kotlinx.coroutines.flow.MutableStateFlow(false)
-        /** The app itself is open: it shows everything, so the bubble steps aside. */
-        val appVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** Keeps the timer running and lets a mention peek shrink back even when nothing else changes. */
+    private val ticker = object : Runnable {
+        override fun run() {
+            lastState?.let { refresh(it) }
+            handler.postDelayed(this, 1_000)
+        }
     }
-
-    private var panel: View? = null
-    private var panelContent: LinearLayout? = null
-    private var liveView: TextView? = null
-    private var lastPanelState: UiState? = null
-    private var keepScreenOn = false
 
     fun render(state: UiState) {
+        lastState = state
         val inMeeting = state.meetingVisible || state.status == Status.LISTENING
-        if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the bubble again
+        if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the island again
         val show = prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
         if (!show) {
-            closePanel()
-            removeBubble()
+            removeIsland()
             return
         }
-        val view = bubble ?: createBubble() ?: return
-        styleBubble(view, state)
-        setKeepScreenOn(state.status == Status.LISTENING)
-        if (panel != null) renderPanel(state)
+        if (island != null && geometryWidth != screenWidth) removeIsland() // rotated: the camera moved
+        if (island == null && !createIsland()) return
+        refresh(state)
     }
 
+    /** Grow into the full panel (tap, or she was asked something). */
     fun openPanel() {
-        if (bubble == null || panel != null) return
-        val content = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(18))
-        }
-        val scroll = object : ScrollView(context) {
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val max = MeasureSpec.makeMeasureSpec((screenHeight * 0.64).toInt(), MeasureSpec.AT_MOST)
-                super.onMeasure(widthMeasureSpec, max)
-            }
-        }.apply {
-            background = rounded(C.panel, 28, C.border)
-            elevation = dp(12).toFloat()
-            clipToOutline = true
-            isVerticalScrollBarEnabled = false
-            addView(content)
-        }
-        val params = WindowManager.LayoutParams(
-            screenWidth - dp(20), WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(54)
-            windowAnimations = android.R.style.Animation_Toast
-        }
-        try {
-            wm.addView(scroll, params)
-            panel = scroll
-            panelContent = content
-            lastPanelState = null
-            renderPanel(engine.state.value)
-        } catch (_: Exception) {
-            panel = null
-            panelContent = null
-        }
+        val root = island ?: return
+        userExpanded = true
+        renderPanel(lastState ?: engine.state.value)
+        root.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        morphTo(Mode.EXPANDED)
     }
 
+    /** Shrink back into the pill. */
     fun closePanel() {
-        val view = panel ?: return
-        try {
-            wm.removeView(view)
-        } catch (_: Exception) {
-        }
-        panel = null
-        panelContent = null
-        liveView = null
-        lastPanelState = null
+        userExpanded = false
+        if (island == null) return
+        morphTo(targetMode(lastState ?: engine.state.value, System.currentTimeMillis()))
     }
 
     fun destroy() {
-        closePanel()
-        removeBubble()
+        removeIsland()
     }
 
-    // ---------------------------------------------------------------- island
+    private fun refresh(state: UiState) {
+        if (island == null) return
+        val now = System.currentTimeMillis()
+        updateCompact(state, now)
+        updateAlert(state)
+        if (userExpanded) renderPanel(state)
+        val target = targetMode(state, now)
+        if (target != mode) morphTo(target)
+        setKeepScreenOn(state.status == Status.LISTENING)
+    }
 
-    private fun createBubble(): LinearLayout? {
-        val dot = View(context).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(C.green)
+    private fun targetMode(state: UiState, now: Long): Mode {
+        if (userExpanded) return Mode.EXPANDED
+        val peek = state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC
+        return if (peek && now - state.alertAt < ALERT_PEEK_MS) Mode.ALERT else Mode.COMPACT
+    }
+
+    // ---------------------------------------------------------------- geometry
+
+    private fun computeGeometry() {
+        geometryWidth = screenWidth
+        // A slim pill, like the real Dynamic Island. Phones report the camera cut-out as a box that
+        // often reaches the top of the screen, so only its position is used, not its height.
+        compactH = dp(36)
+        val camera = cameraRect()
+        if (camera != null) {
+            camCenterX = camera.centerX()
+            // The round hole sits at the bottom of that box.
+            val holeCenterY = camera.bottom - minOf(camera.width(), camera.height()) / 2
+            islandTop = (holeCenterY - compactH / 2).coerceAtLeast(dp(2))
+            camGap = minOf(camera.width(), dp(40)) + dp(12)
+        } else {
+            camCenterX = screenWidth / 2
+            islandTop = dp(6)
+            camGap = dp(12)
+        }
+        contentTop = compactH + dp(6)
+        compactW = dp(28) + 2 * dp(58) + camGap
+    }
+
+    /** The front-camera hole at the top of the screen, if the phone has one in the middle. */
+    private fun cameraRect(): Rect? {
+        val cutout = try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                wm.currentWindowMetrics.windowInsets.displayCutout
+            } else {
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.cutout
             }
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val rect = cutout.boundingRectTop
+        // No hole, or a wide notch: centre at the top instead.
+        if (rect.isEmpty || rect.width() > screenWidth / 3) return null
+        return Rect(rect)
+    }
+
+    private fun widthFor(mode: Mode) = when (mode) {
+        Mode.COMPACT -> compactW
+        Mode.ALERT -> screenWidth - dp(20)
+        Mode.EXPANDED -> screenWidth - dp(14)
+    }
+
+    private fun clampX(width: Int) = (camCenterX - width / 2).coerceIn(dp(4), maxOf(dp(4), screenWidth - width - dp(4)))
+
+    // ---------------------------------------------------------------- building
+
+    private fun createIsland(): Boolean {
+        computeGeometry()
+        val background = GradientDrawable().apply {
+            setColor(Color.BLACK)
+            cornerRadius = compactH / 2f
+            setStroke(dp(1), C.islandEdge)
         }
-        val title = text("", 14f, Color.WHITE, bold = true).apply {
+        val root = FrameLayout(context).apply {
+            this.background = background
+            clipToOutline = true
+            elevation = dp(8).toFloat()
+        }
+
+        // Compact: sound bars | camera | timer
+        val wave = WaveView(context, C.green)
+        val dot = View(context).apply { this.background = oval(C.idle) }
+        val label = text("", 14.5f, Color.WHITE, bold = true).apply {
             maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
         }
-        val subtitle = text("", 13.5f, C.soft).apply {
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER_HORIZONTAL
-            visibility = View.GONE
+        val left = FrameLayout(context).apply {
+            addView(wave, FrameLayout.LayoutParams(dp(26), dp(16), Gravity.CENTER_VERTICAL or Gravity.START))
+            addView(dot, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.CENTER_VERTICAL or Gravity.START).apply { marginStart = dp(6) })
         }
-        val row = row().apply {
-            addView(dot, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(9) })
-            addView(title)
-        }
-        val island = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(18), dp(9), dp(18), dp(9))
-            minimumHeight = dp(36)
-            background = rounded(Color.BLACK, 24, C.islandBorder)
-            elevation = dp(10).toFloat()
-            layoutTransition = LayoutTransition().apply { enableTransitionType(LayoutTransition.CHANGING) }
-            addView(row)
-            addView(subtitle)
-            setOnClickListener { if (panel == null) openPanel() else closePanel() }
+        val compact = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(14), 0)
+            addView(left, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f))
+            addView(View(context), LinearLayout.LayoutParams(camGap, 1))
+            addView(label, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            setOnClickListener { openPanel() }
             setOnLongClickListener {
-                hidden.value = true
-                closePanel()
-                removeBubble()
-                Toast.makeText(context, "Ascuns până la finalul ședinței. Îl poți reafișa din aplicație.", Toast.LENGTH_LONG).show()
+                hideIsland()
                 true
             }
         }
+
+        // Alert: who mentioned her and what was said
+        val aDot = View(context).apply { this.background = oval(C.amber) }
+        val aTitle = text("", 16f, Color.WHITE, bold = true).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val aBody = text("", 15f, C.soft).apply {
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val alert = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), contentTop, dp(20), dp(16))
+            addView(row().apply {
+                addView(aDot, LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(10) })
+                addView(aTitle)
+            })
+            addView(aBody.top(6))
+            addView(text("Atinge pentru detalii", 12f, C.faint).top(8))
+            visibility = View.GONE
+            setOnClickListener { openPanel() }
+            setOnLongClickListener {
+                hideIsland()
+                true
+            }
+        }
+
+        // Expanded: the full panel
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), 0, dp(16), dp(16))
+        }
+        val scroll = object : ScrollView(context) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val max = MeasureSpec.makeMeasureSpec((screenHeight * 0.66).toInt(), MeasureSpec.AT_MOST)
+                super.onMeasure(widthMeasureSpec, max)
+            }
+        }.apply {
+            isVerticalScrollBarEnabled = false
+            addView(content)
+        }
+        val expanded = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, contentTop, 0, 0)
+            addView(scroll)
+            visibility = View.GONE
+        }
+
+        root.addView(compact, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        root.addView(alert, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(expanded, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        // A tap anywhere else shrinks the open island back, like on iPhone.
+        root.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_OUTSIDE && mode == Mode.EXPANDED) {
+                closePanel()
+                true
+            } else {
+                false
+            }
+        }
+
+        params.width = compactW
+        params.height = compactH
+        params.x = clampX(compactW)
+        params.y = islandTop
         return try {
-            wm.addView(island, bubbleParams)
-            bubble = island
-            islandDot = dot
-            islandTitle = title
-            islandSubtitle = subtitle
-            island
+            wm.addView(root, params)
+            island = root
+            islandBg = background
+            compactLayer = compact
+            waves = wave
+            compactDot = dot
+            compactLabel = label
+            alertLayer = alert
+            alertDot = aDot
+            alertTitle = aTitle
+            alertBody = aBody
+            expandedLayer = expanded
+            panelContent = content
+            mode = Mode.COMPACT
+            handler.removeCallbacks(ticker)
+            handler.postDelayed(ticker, 1_000)
+            true
         } catch (_: Exception) {
-            null
+            false
         }
     }
 
-    private fun styleBubble(view: LinearLayout, state: UiState) {
-        val now = System.currentTimeMillis()
+    private fun hideIsland() {
+        hidden.value = true
+        removeIsland()
+        Toast.makeText(context, "Ascuns până la finalul ședinței. Îl poți reafișa din aplicație.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun removeIsland() {
+        val root = island ?: return
+        handler.removeCallbacks(ticker)
+        island = null
+        morph?.cancel()
+        morph = null
+        pulse?.cancel()
+        pulse = null
+        try {
+            wm.removeView(root)
+        } catch (_: Exception) {
+        }
+        islandBg = null
+        compactLayer = null
+        waves = null
+        compactDot = null
+        compactLabel = null
+        alertLayer = null
+        alertDot = null
+        alertTitle = null
+        alertBody = null
+        expandedLayer = null
+        panelContent = null
+        liveView = null
+        lastPanelState = null
+        mode = Mode.COMPACT
+        userExpanded = false
+        keepScreenOn = false
+        params.flags = params.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
+    }
+
+    // ---------------------------------------------------------------- content
+
+    private fun updateCompact(state: UiState, now: Long) {
         val age = now - state.alertAt
         val asked = state.alert == AlertLevel.DIRECT && age < 120_000
-        val softAlert = (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC) && age < 60_000
-        val (color, title) = when {
-            asked -> C.redStrong to "Întrebare pentru tine"
-            softAlert && state.alert == AlertLevel.MENTION -> C.amber to "Ai fost menționată"
-            softAlert -> C.amber to "Subiect urmărit"
-            state.status == Status.LISTENING && state.health != null -> C.amber to "Nu primesc subtitrări"
-            state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "Ședința nu e pe ecran"
-            state.status == Status.LISTENING -> C.green to "Ascult · ${state.startedAt?.let { (now - it) / 60_000 } ?: 0} min"
-            else -> C.idle to "Pornesc subtitrările…"
+        val talking = state.live.isNotBlank() || (state.lines.lastOrNull()?.let { now - it.ts < 4_000 } ?: false)
+        val (dotColor, label) = when {
+            asked -> C.redStrong to "Întrebare"
+            state.alert == AlertLevel.MENTION && age < 60_000 -> C.amber to "Menționată"
+            state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "Ascuns"
+            state.status == Status.LISTENING && state.health != null -> C.amber to "Fără CC"
+            state.status == Status.LISTENING -> null to elapsed(state.startedAt, now)
+            else -> C.idle to "CC…"
         }
-        islandTitle?.text = title
-        (islandDot?.background as? GradientDrawable)?.setColor(color)
-        val detail = when {
-            asked -> state.answer?.question ?: state.alertText
-            softAlert -> state.alertText
-            else -> null
+        waves?.apply {
+            visibility = if (dotColor == null) View.VISIBLE else View.GONE
+            active = talking
         }
-        islandSubtitle?.apply {
-            text = detail.orEmpty()
-            maxWidth = (screenWidth * 0.8).toInt()
-            visibility = if (detail.isNullOrBlank()) View.GONE else View.VISIBLE
+        compactDot?.apply {
+            visibility = if (dotColor == null) View.GONE else View.VISIBLE
+            if (dotColor != null) (background as? GradientDrawable)?.setColor(dotColor)
+            setPulsing(this, asked)
         }
-        (view.background as? GradientDrawable)?.setStroke(dp(1), if (asked) C.red else C.islandBorder)
-        setPulsing(view, asked)
-        setDotPulsing(state.status == Status.LISTENING && !asked)
+        compactLabel?.apply {
+            text = label
+            setTextColor(if (asked) C.red else Color.WHITE)
+            // Both sides keep the same width so the pill stays centred on the camera.
+            val side = maxOf(dp(58), paint.measureText(label).roundToInt() + dp(4))
+            fitCompactWidth(dp(28) + 2 * side + camGap)
+        }
+        islandBg?.setStroke(dp(1), if (asked) Color.argb(160, 239, 68, 68) else C.islandEdge)
     }
 
-    /** Gentle grow-shrink while a question waits for her. */
+    /** Widens or narrows the compact pill smoothly when its label needs more or less room. */
+    private fun fitCompactWidth(width: Int) {
+        if (width == compactW) return
+        compactW = width
+        if (mode != Mode.COMPACT || morph != null) return
+        val start = params.width
+        morph = ValueAnimator.ofInt(start, width).apply {
+            duration = 260
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener { setSize(it.animatedValue as Int, compactH) }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (morph === animation) morph = null
+                }
+            })
+            start()
+        }
+    }
+
+    private fun updateAlert(state: UiState) {
+        val line = state.alertText ?: return
+        val speaker = line.substringBefore(": ", "").takeIf { it.isNotBlank() && it.length < 40 }
+        val (color, title) = when (state.alert) {
+            AlertLevel.DIRECT -> C.redStrong to "${speaker ?: "Cineva"} te întreabă"
+            AlertLevel.MENTION -> C.amber to "${speaker ?: "Cineva"} te-a menționat"
+            AlertLevel.TOPIC -> C.blue to "Subiect urmărit"
+            else -> C.amber to "Atenție"
+        }
+        (alertDot?.background as? GradientDrawable)?.setColor(color)
+        alertTitle?.text = title
+        alertBody?.text = if (speaker != null) line.substringAfter(": ") else line
+    }
+
+    private fun elapsed(startedAt: Long?, now: Long): String {
+        val seconds = ((now - (startedAt ?: now)) / 1000).coerceAtLeast(0)
+        val h = seconds / 3600
+        val m = (seconds % 3600) / 60
+        val s = seconds % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+    }
+
+    /** The red dot beats while a question waits for her. */
     private fun setPulsing(view: View, on: Boolean) {
         if (on && pulse == null) {
             pulse = ObjectAnimator.ofPropertyValuesHolder(
                 view,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.05f),
-                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.05f),
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.5f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.5f),
+                PropertyValuesHolder.ofFloat(View.ALPHA, 1f, 0.55f),
             ).apply {
-                duration = 700
+                duration = 600
                 repeatMode = ValueAnimator.REVERSE
                 repeatCount = ValueAnimator.INFINITE
                 start()
@@ -277,64 +506,102 @@ class Overlay(
             pulse = null
             view.scaleX = 1f
             view.scaleY = 1f
+            view.alpha = 1f
         }
     }
 
-    /** The green dot breathes while listening. */
-    private fun setDotPulsing(on: Boolean) {
-        val dot = islandDot ?: return
-        if (on && dotPulse == null) {
-            dotPulse = ObjectAnimator.ofFloat(dot, View.ALPHA, 1f, 0.3f).apply {
-                duration = 900
-                repeatMode = ValueAnimator.REVERSE
-                repeatCount = ValueAnimator.INFINITE
-                start()
-            }
-        } else if (!on && dotPulse != null) {
-            dotPulse?.cancel()
-            dotPulse = null
-            dot.alpha = 1f
+    // ---------------------------------------------------------------- morphing
+
+    /** Animates the island's size and corners from its current shape to [target]'s, with a soft spring. */
+    private fun morphTo(target: Mode) {
+        val root = island ?: return
+        if (target == mode) return
+        mode = target
+        morph?.cancel()
+        val layer = when (target) {
+            Mode.COMPACT -> compactLayer
+            Mode.ALERT -> alertLayer
+            Mode.EXPANDED -> expandedLayer
+        } ?: return
+        listOf(compactLayer, alertLayer, expandedLayer).forEach { if (it != null && it !== layer) it.visibility = View.GONE }
+        layer.visibility = View.VISIBLE
+        layer.alpha = 0f
+
+        val startW = params.width
+        val startH = if (root.height > 0) root.height else compactH
+        val startR = islandBg?.cornerRadius ?: (compactH / 2f)
+        val endW = widthFor(target)
+        val endH = if (target == Mode.COMPACT) compactH else measure(layer, endW)
+        val endR = when (target) {
+            Mode.COMPACT -> compactH / 2f
+            Mode.ALERT -> dp(30).toFloat()
+            Mode.EXPANDED -> dp(34).toFloat()
         }
+        if (target == Mode.COMPACT) userExpanded = false
+
+        morph = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (target == Mode.COMPACT) 320L else 460L
+            interpolator = if (target == Mode.COMPACT) DecelerateInterpolator(1.8f) else OvershootInterpolator(0.75f)
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                setSize(lerp(startW, endW, f), lerp(startH, endH, f))
+                islandBg?.cornerRadius = startR + (endR - startR) * f.coerceIn(0f, 1f)
+                layer.alpha = ((f - 0.3f) / 0.7f).coerceIn(0f, 1f)
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (morph !== animation) return
+                    morph = null
+                    layer.alpha = 1f
+                    // Open shapes follow their content (answer arriving, catch-up updating).
+                    if (target != Mode.COMPACT && island != null) {
+                        params.height = WindowManager.LayoutParams.WRAP_CONTENT
+                        update(root)
+                    }
+                }
+            })
+            start()
+        }
+    }
+
+    private fun measure(layer: View, width: Int): Int {
+        layer.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec((screenHeight * 0.85).toInt(), View.MeasureSpec.AT_MOST),
+        )
+        return layer.measuredHeight.coerceAtLeast(compactH)
+    }
+
+    private fun lerp(from: Int, to: Int, f: Float) = (from + (to - from) * f).roundToInt().coerceAtLeast(dp(24))
+
+    private fun setSize(width: Int, height: Int) {
+        val root = island ?: return
+        params.width = width
+        params.height = height
+        params.x = clampX(width)
+        update(root)
     }
 
     private fun setKeepScreenOn(on: Boolean) {
         if (on == keepScreenOn) return
         keepScreenOn = on
-        val view = bubble ?: return
-        bubbleParams.flags = if (on) {
-            bubbleParams.flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        val root = island ?: return
+        params.flags = if (on) {
+            params.flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         } else {
-            bubbleParams.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
+            params.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
         }
-        update(view, bubbleParams)
+        update(root)
     }
 
-    private fun removeBubble() {
-        val view = bubble ?: return
-        pulse?.cancel()
-        pulse = null
-        dotPulse?.cancel()
-        dotPulse = null
-        try {
-            wm.removeView(view)
-        } catch (_: Exception) {
-        }
-        bubble = null
-        islandDot = null
-        islandTitle = null
-        islandSubtitle = null
-        keepScreenOn = false
-        bubbleParams.flags = bubbleParams.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
-    }
-
-    private fun update(view: View, params: WindowManager.LayoutParams) {
+    private fun update(view: View) {
         try {
             if (view.isAttachedToWindow) wm.updateViewLayout(view, params)
         } catch (_: Exception) {
         }
     }
 
-    // ---------------------------------------------------------------- panel
+    // ---------------------------------------------------------------- panel content
 
     private fun renderPanel(state: UiState) {
         val content = panelContent ?: return
@@ -425,11 +692,8 @@ class Overlay(
 
     private fun statusOf(state: UiState, now: Long): Pair<Int, String> = when {
         state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "${state.meetingApp ?: "Ședința"} nu e pe ecran"
-        state.status == Status.LISTENING -> {
-            val minutes = state.startedAt?.let { (now - it) / 60_000 } ?: 0
-            C.green to "Ascult · ${state.meetingApp ?: ""} · $minutes min"
-        }
-        state.status == Status.WAITING_CAPTIONS -> C.amber to "Pornește subtitrările (CC)"
+        state.status == Status.LISTENING -> C.green to "Ascult · ${state.meetingApp ?: ""} · ${elapsed(state.startedAt, now)}"
+        state.status == Status.WAITING_CAPTIONS -> C.amber to "Pornesc subtitrările…"
         else -> C.idle to "Nicio ședință"
     }
 
@@ -446,6 +710,54 @@ class Overlay(
     }
 
     // ---------------------------------------------------------------- view helpers
+
+    /** Sound bars that dance while someone is talking and settle when the meeting is quiet. */
+    private class WaveView(context: Context, color: Int) : View(context) {
+        var active = true
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        private val speeds = intArrayOf(1, 2, 1, 3)
+        private val offsets = floatArrayOf(0f, 1.7f, 3.1f, 4.4f)
+        private var phase = 0f
+        private var level = 1f
+        private val animator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat()).apply {
+            duration = 1_400
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener {
+                phase = it.animatedValue as Float
+                level += ((if (active) 1f else 0.18f) - level) * 0.08f
+                invalidate()
+            }
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            animator.start()
+        }
+
+        override fun onDetachedFromWindow() {
+            animator.cancel()
+            super.onDetachedFromWindow()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            val bars = speeds.size
+            val gap = width * 0.14f
+            val barWidth = (width - gap * (bars - 1)) / bars
+            for (i in 0 until bars) {
+                val wave = (sin(phase * speeds[i] + offsets[i]) + 1f) / 2f
+                val h = height * (0.22f + 0.78f * wave * level)
+                val left = i * (barWidth + gap)
+                val top = (height - h) / 2f
+                canvas.drawRoundRect(left, top, left + barWidth, top + h, barWidth / 2, barWidth / 2, paint)
+            }
+        }
+    }
+
+    private fun oval(color: Int) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(color)
+    }
 
     private fun rounded(color: Int, radiusDp: Int, stroke: Int? = null) = GradientDrawable().apply {
         setColor(color)
@@ -484,13 +796,7 @@ class Overlay(
             setPadding(dp(12), dp(7), dp(14), dp(7))
             background = rounded(Color.argb(40, Color.red(color), Color.green(color), Color.blue(color)), 50)
         }
-        val dot = View(context).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color)
-            }
-        }
-        pill.addView(dot, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
+        pill.addView(View(context).apply { background = oval(color) }, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
         pill.addView(text(value, 13f, color, bold = true))
         return LinearLayout(context).apply { addView(pill) } // keep the pill content-sized inside the weighted slot
     }
