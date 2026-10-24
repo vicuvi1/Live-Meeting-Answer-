@@ -88,8 +88,9 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
     ) {
         Header(firstName, state)
 
-        if (!serviceOn || !notificationsOk || !hasName || !hasKey) {
-            SetupCard(serviceOn, notificationsOk, hasName, hasKey, onOpenSettings)
+        val xiaomiLeft = Setup.isXiaomi && remember(resumes, prefsVersion) { xiaomiStepsDone(app.prefs, context) } < 4
+        if (!serviceOn || !notificationsOk || !hasName || !hasKey || xiaomiLeft) {
+            SetupCard(app, resumes, serviceOn, notificationsOk, hasName, hasKey, onOpenSettings)
         }
 
         update?.let { UpdateCard(it, resumes) }
@@ -159,23 +160,33 @@ private fun Header(firstName: String, state: UiState) {
 }
 
 @Composable
-private fun SetupCard(serviceOn: Boolean, notificationsOk: Boolean, hasName: Boolean, hasKey: Boolean, onOpenSettings: () -> Unit) {
+private fun SetupCard(
+    app: App,
+    resumes: Int,
+    serviceOn: Boolean,
+    notificationsOk: Boolean,
+    hasName: Boolean,
+    hasKey: Boolean,
+    onOpenSettings: () -> Unit,
+) {
     val context = LocalContext.current
-    val done = listOf(serviceOn, notificationsOk, hasName, hasKey).count { it }
+    val total = if (Setup.isXiaomi) 8 else 4
+    val done = listOf(serviceOn, notificationsOk, hasName, hasKey).count { it } +
+        if (Setup.isXiaomi) xiaomiStepsDone(app.prefs, context) else 0
     AppCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Configurare", style = MaterialTheme.typography.titleMedium, color = Palette.Text, modifier = Modifier.weight(1f))
-            Text("$done din 4", style = MaterialTheme.typography.labelMedium, color = Palette.Green)
+            Text("$done din $total", style = MaterialTheme.typography.labelMedium, color = Palette.Green)
         }
         Spacer(Modifier.height(10.dp))
-        ProgressBar(done / 4f)
+        ProgressBar(done / total.toFloat())
         Spacer(Modifier.height(6.dp))
         StepRow(1, serviceOn, "Citirea subtitrărilor", "Accesibilitate → Aplicații descărcate → Asistent Ședințe", "Pornește") {
             Setup.openAccessibility(context)
         }
         if (!serviceOn) {
             Text(
-                "Butonul e gri? Info aplicație → ⋮ sus-dreapta → Permite setări restricționate.",
+                "Butonul e gri? ${Setup.restrictedSettingsPath}, apoi încearcă din nou. După o actualizare e posibil să fie nevoie din nou.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Faint,
                 modifier = Modifier.padding(start = 48.dp, bottom = 4.dp),
             )
@@ -186,6 +197,11 @@ private fun SetupCard(serviceOn: Boolean, notificationsOk: Boolean, hasName: Boo
         }
         StepRow(3, hasName, "Numele tău", "Ca să știu când ești strigată", "Adaugă", onOpenSettings)
         StepRow(4, hasKey, "Cheia AI", "Pentru rezumat și răspunsuri", "Adaugă", onOpenSettings)
+        if (Setup.isXiaomi) {
+            Spacer(Modifier.height(6.dp))
+            Eyebrow("Telefon Xiaomi (HyperOS)", Palette.Amber)
+            XiaomiSteps(app.prefs, resumes, firstNumber = 5)
+        }
     }
 }
 

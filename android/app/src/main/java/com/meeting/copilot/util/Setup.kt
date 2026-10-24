@@ -13,6 +13,7 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.meeting.copilot.BuildConfig
+import com.meeting.copilot.engine.Alerts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -54,6 +55,27 @@ object Setup {
         )
         if (!start(context, intent)) openAppInfo(context)
     }
+
+    /**
+     * Settings of the "someone asked you" notifications. HyperOS turns their floating (heads-up)
+     * and lock-screen switches off for newly installed apps, so the alert would arrive silently.
+     */
+    fun openQuestionAlertSettings(context: Context) {
+        val channel = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, Alerts.CHANNEL_DIRECT)
+        if (!start(context, channel)) {
+            start(context, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+        }
+    }
+
+    /** Where Android's "Allow restricted settings" lives on this phone. */
+    val restrictedSettingsPath: String
+        get() = if (isXiaomi) {
+            "Setări → Aplicații → Gestionare aplicații → Asistent Ședințe → ⋮ (sus-dreapta) → Permite setări restricționate"
+        } else {
+            "Info aplicație → ⋮ (sus-dreapta) → Permite setări restricționate"
+        }
 
     fun openUrl(context: Context, url: String) = start(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 

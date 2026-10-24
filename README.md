@@ -34,27 +34,36 @@ Limits that follow from this:
 
 ## Install on the phone
 
+Built for the **Xiaomi 15T Pro** (HyperOS 3, Android 16, 1280×2772); works on Android 10+.
+
 1. Download the latest `asistent-sedinte-*.apk` from
    [Releases](https://github.com/vicuvi1/Live-Meeting-Answer-/releases/latest) on the phone and
-   install it (allow installing from the browser when asked).
-2. Open **Asistent Ședințe**. The **Pregătire** card lists what's left:
+   install it. Google Play Protect blocks the first install of apps with accessibility access:
+   Play Store → profile → Play Protect → ⚙ → turn off scanning, install, turn it back on.
+   HyperOS may also scan the app and warn; choose to install anyway.
+2. Open **Asistent Ședințe**. The **Configurare** card lists what's left (8 steps on Xiaomi):
    - **Citirea subtitrărilor:** Accessibility → Downloaded apps → Asistent Ședințe → On.
-     If it's greyed out: App info → ⋮ (top right) → **Allow restricted settings**, then retry.
+     If it's greyed out (HyperOS): Settings → Apps → Manage apps → Asistent Ședințe → ⋮ (top right)
+     → **Allow restricted settings**, then retry. This can be needed again after an update.
    - **Notificări:** allow.
-   - **Setări → Despre tine:** her name, other forms of it, notes (role, projects, facts),
-     colleagues' names and terms, topics to follow.
-   - **Setări → AI:** a Gemini key (free at aistudio.google.com/apikey) or an OpenRouter key,
-     then **Testează cheia**.
-3. **Setări → Telefon Xiaomi:** Autostart → On, Battery → No restrictions, and lock the app in Recents.
-4. Watch alerts: Mi Fitness → app notifications → enable Asistent Ședințe.
-5. **Setări → Test fără ședință:** send a line like "Maria, poți să ne spui când e gata raportul?".
+   - **Numele tău** and **Cheia AI** (Setări). Use an **OpenRouter** key: Gemini's free tier allows
+     only about 20 requests a day, which a single meeting uses up. With both keys filled in, the
+     app falls back to OpenRouter automatically.
+   - **Xiaomi (HyperOS):** Autostart on, Battery → No restrictions, **Floating notifications** on
+     for "Întrebări pentru tine" (HyperOS turns them off for new apps, so alerts would arrive
+     silently), and lock the app in Recents. Each step opens the right screen, then tap **Gata ✓**.
+3. Watch alerts: Mi Fitness → app notifications → enable Asistent Ședințe.
+4. **Setări → Test fără ședință:** send a line like "Maria, poți să ne spui când e gata raportul?".
    This checks the vibration, the answer and the summary without a real meeting.
 
-In a meeting: join in Zoom/Meet, tap **CC**, choose Romanian. The bubble turns green (listening),
-amber (mentioned or topic) or red (question). Tap it for the panel.
+In a meeting: join in Zoom or Meet (also Meet inside Gmail). The app turns on Romanian captions by
+itself. The island around the front camera shows sound bars and the meeting timer; it stretches out
+when she's mentioned and grows into the answer panel when she's asked something. Tap it to open,
+tap elsewhere to close, long-press to hide until the meeting ends.
 
-Updates: the app checks GitHub and shows **Descarcă actualizarea**. Every build on `main`
-publishes a signed APK that installs over the previous one, keeping all data.
+Updates: **Actualizează acum** in the app downloads the new version and opens Android's update
+prompt. Every build on `main` publishes a signed APK that installs over the previous one, keeping
+all data.
 
 ## If captions aren't picked up
 
