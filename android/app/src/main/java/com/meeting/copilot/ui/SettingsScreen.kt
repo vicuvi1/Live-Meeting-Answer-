@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.meeting.copilot.App
 import com.meeting.copilot.BuildConfig
+import com.meeting.copilot.PowerTileService
 import com.meeting.copilot.data.Prefs
 import com.meeting.copilot.util.DiagLog
 import com.meeting.copilot.util.Setup
@@ -132,6 +133,25 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                 "Doar fragmentele necesare din ședință sunt trimise la serviciul AI ales.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Faint, modifier = Modifier.padding(top = 10.dp),
             )
+        }
+
+        SettingsGroup("Pornire și oprire", Icons.Filled.Star, Tone.Success) {
+            Text(
+                "Pornește asistentul înainte de ședință; oprit, nu ascultă nimic și nu consumă baterie.",
+                style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(bottom = 6.dp),
+            )
+            PrefSwitch(
+                "Se oprește singur după ședință",
+                "Ca să nu rămână pornit din greșeală",
+                prefs.autoOff,
+            ) { prefs.autoOff = it }
+            var tileResult by remember { mutableStateOf<String?>(null) }
+            AppButton(
+                "Pune butonul Pornit/Oprit în panoul de sus",
+                { PowerTileService.requestAdd(context) { tileResult = it } },
+                style = ButtonStyle.Tonal, tone = Tone.Success, modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            )
+            tileResult?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 8.dp)) }
         }
 
         SettingsGroup("Subtitrări", Icons.Filled.PlayArrow, Tone.Info) {

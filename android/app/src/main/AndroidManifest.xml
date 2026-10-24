@@ -41,6 +41,21 @@
                 android:resource="@xml/caption_service" />
         </service>
 
+        <!-- On/off button in the quick panel. -->
+        <service
+            android:name=".PowerTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
         <!-- Hands the downloaded update to the Android installer. -->
         <provider
             android:name="androidx.core.content.FileProvider"

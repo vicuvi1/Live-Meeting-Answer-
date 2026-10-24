@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +88,9 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Header(firstName, state)
+        val active = remember(prefsVersion) { app.prefs.active }
+        Header(firstName, state, active)
+        PowerCard(active, onChange = { app.engine.setActive(it) })
 
         val xiaomiLeft = Setup.isXiaomi && remember(resumes, prefsVersion) { xiaomiStepsDone(app.prefs, context) } < 4
         if (!serviceOn || !notificationsOk || !hasName || !hasKey || xiaomiLeft) {
@@ -99,7 +103,7 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         if (bubbleHidden && (state.meetingVisible || state.status == Status.LISTENING)) {
             AppCard(padding = 16.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Bula e ascunsă", style = MaterialTheme.typography.titleSmall, color = Palette.Text, modifier = Modifier.weight(1f))
+                    Text("Insula de sus e ascunsă", style = MaterialTheme.typography.titleSmall, color = Palette.Text, modifier = Modifier.weight(1f))
                     AppButton("Arat-o", { Overlay.hidden.value = false }, style = ButtonStyle.Tonal, height = 40.dp)
                 }
             }
@@ -108,17 +112,19 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         AnimatedVisibility(showAnswer, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             AnswerHero(state, onDismiss = { app.engine.dismissAnswer() })
         }
-        if (!showAnswer) StatusHero(state, now, onTest = onOpenSettings)
+        if (!showAnswer && active) StatusHero(state, now, onTest = onOpenSettings)
         if (!showAnswer && state.answerError != null) {
             Text(state.answerError!!, color = Palette.Red, style = MaterialTheme.typography.bodySmall)
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ActionTile("Ce am pierdut?", "Rezumatul de acum", Icons.Filled.Refresh, Tone.Success, filled = true) {
-                app.engine.requestCatchUp()
-            }
-            ActionTile("Ce să răspund?", "La ultima întrebare", Icons.Filled.Face, Tone.Info, filled = false) {
-                app.engine.requestAnswer()
+        if (active) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ActionTile("Ce am pierdut?", "Rezumatul de acum", Icons.Filled.Refresh, Tone.Success, filled = true) {
+                    app.engine.requestCatchUp()
+                }
+                ActionTile("Ce să răspund?", "La ultima întrebare", Icons.Filled.Face, Tone.Info, filled = false) {
+                    app.engine.requestAnswer()
+                }
             }
         }
 
@@ -142,7 +148,7 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
 }
 
 @Composable
-private fun Header(firstName: String, state: UiState) {
+private fun Header(firstName: String, state: UiState, active: Boolean) {
     Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
@@ -151,10 +157,42 @@ private fun Header(firstName: String, state: UiState) {
             )
             Text("Asistentul tău de ședință", style = MaterialTheme.typography.bodySmall, color = Palette.Muted)
         }
-        when (state.status) {
-            Status.LISTENING -> Pill("Ascult", Tone.Success)
-            Status.WAITING_CAPTIONS -> Pill("Aștept CC", Tone.Warning)
-            Status.IDLE -> Pill("Pregătit", Tone.Neutral)
+        when {
+            !active -> Pill("Oprit", Tone.Neutral)
+            state.status == Status.LISTENING -> Pill("Ascult", Tone.Success)
+            state.status == Status.WAITING_CAPTIONS -> Pill("Aștept CC", Tone.Warning)
+            else -> Pill("Pregătit", Tone.Neutral)
+        }
+    }
+}
+
+/** The main on/off switch: on before a meeting, off afterwards to save battery. */
+@Composable
+private fun PowerCard(active: Boolean, onChange: (Boolean) -> Unit) {
+    AppCard(tone = if (active) Tone.Success else Tone.Neutral, padding = 18.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (active) "Asistentul e pornit" else "Asistentul e oprit",
+                    style = MaterialTheme.typography.titleLarge, color = Palette.Text,
+                )
+                Text(
+                    if (active) "Ascult automat ședințele din Zoom și Meet." else "Nu ascult nimic și nu consum baterie.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
+                )
+            }
+            Switch(
+                checked = active,
+                onCheckedChange = onChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF06110C), checkedTrackColor = Palette.Green,
+                    uncheckedThumbColor = Palette.Muted, uncheckedTrackColor = Palette.SurfaceHigh, uncheckedBorderColor = Palette.Border,
+                ),
+            )
+        }
+        if (!active) {
+            Spacer(Modifier.height(12.dp))
+            AppButton("Pornește asistentul", { onChange(true) }, modifier = Modifier.fillMaxWidth(), height = 56.dp)
         }
     }
 }
@@ -287,7 +325,7 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
             }
             HowToStep(1, "Intră în ședință în Zoom sau Meet, pe acest telefon")
             HowToStep(2, "Pornesc singură subtitrările în română")
-            HowToStep(3, "Bula verde de pe margine înseamnă că ascult")
+            HowToStep(3, "Insula neagră de lângă cameră arată că ascult")
             Spacer(Modifier.height(10.dp))
             AppButton("Încearcă un test fără ședință", onTest, style = ButtonStyle.Ghost, icon = Icons.Filled.PlayArrow, modifier = Modifier.fillMaxWidth())
         }

@@ -29,6 +29,10 @@ class Prefs(context: Context) {
 
     var vibrate by flag("vibrate", true)
     var whisperQuestion by flag("whisper_question", false)
+    /** The main on/off switch: off = nothing listens and no battery is used. */
+    var active by flag("active", true)
+    /** Switch off by itself when a meeting ends, so it doesn't stay on by mistake. */
+    var autoOff by flag("auto_off", false)
     var showBubble by flag("show_bubble", true)
     /** Press the captions button in Zoom/Meet automatically and choose Romanian. */
     var autoCaptions by flag("auto_captions", true)

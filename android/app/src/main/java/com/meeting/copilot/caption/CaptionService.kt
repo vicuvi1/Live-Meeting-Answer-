@@ -43,6 +43,9 @@ class CaptionService : AccessibilityService() {
         private val HAS_LETTER = Regex("\\p{L}")
         private val ONLY_NUMBERS = Regex("^[\\d:.,\\s%]+$")
         private const val SCAN_DELAY_MS = 200L
+        private const val EVENT_TYPES = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED
         private const val POLL_MS = 1_500L
         private const val MAX_NODES = 4_000
         private const val MAX_DEPTH = 60
@@ -67,13 +70,14 @@ class CaptionService : AccessibilityService() {
     private var scanPending = false
     private var overlay: Overlay? = null
     private var allAppsMode: Boolean? = null
+    private var activeMode: Boolean? = null
     private val autoCaptions = AutoCaptions()
     private val diagLastText = HashMap<String, String>()
 
     private val poll = object : Runnable {
         override fun run() {
             val state = app.engine.state.value
-            if (state.meetingVisible || state.status == Status.LISTENING) safeScan()
+            if (app.prefs.active && (state.meetingVisible || state.status == Status.LISTENING)) safeScan()
             handler.postDelayed(this, POLL_MS)
         }
     }
@@ -81,7 +85,7 @@ class CaptionService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         _connected.value = true
-        applyPackageFilter()
+        applyServiceConfig()
         val overlay = Overlay(this, app.engine, app.prefs, onDump = { dump() })
         this.overlay = overlay
         scope.launch { app.engine.state.collect { overlay.render(it) } }
@@ -90,7 +94,7 @@ class CaptionService : AccessibilityService() {
         scope.launch { Overlay.appVisible.collect { overlay.render(app.engine.state.value) } }
         scope.launch {
             app.prefs.version.collect {
-                applyPackageFilter()
+                applyServiceConfig()
                 overlay.render(app.engine.state.value)
             }
         }
@@ -99,7 +103,7 @@ class CaptionService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (scanPending) return
+        if (!app.prefs.active || scanPending) return
         scanPending = true
         handler.postDelayed({
             scanPending = false
@@ -119,14 +123,21 @@ class CaptionService : AccessibilityService() {
         super.onDestroy()
     }
 
-    /** In "all apps" diagnostic mode the service listens everywhere, to discover other caption overlays. */
-    private fun applyPackageFilter() {
-        val wantAll = app.prefs.diagnostics && app.prefs.diagnosticsAllApps
-        if (allAppsMode == wantAll) return
+    /**
+     * Switched off: Android stops sending screen events altogether, so the app does nothing and
+     * costs no battery. In "all apps" diagnostic mode it listens everywhere, to discover other
+     * caption overlays.
+     */
+    private fun applyServiceConfig() {
+        val active = app.prefs.active
+        val wantAll = active && app.prefs.diagnostics && app.prefs.diagnosticsAllApps
+        if (allAppsMode == wantAll && activeMode == active) return
         val info = serviceInfo ?: return
         info.packageNames = if (wantAll) null else MEETING_PACKAGES.toTypedArray()
+        info.eventTypes = if (active) EVENT_TYPES else 0
         serviceInfo = info
         allAppsMode = wantAll
+        activeMode = active
     }
 
     private fun safeScan() {
