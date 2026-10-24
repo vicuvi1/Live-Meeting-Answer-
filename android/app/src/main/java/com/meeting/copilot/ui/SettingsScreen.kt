@@ -220,7 +220,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                     status = "Caut…"
                     scope.launch {
                         status = try {
-                            update = UpdateChecker.check()
+                            update = UpdateChecker.check(force = true)
                             if (update == null) "Ai ultima versiune." else "Versiune nouă: ${update?.name}"
                         } catch (e: Exception) {
                             "Nu am putut verifica: ${e.message}"

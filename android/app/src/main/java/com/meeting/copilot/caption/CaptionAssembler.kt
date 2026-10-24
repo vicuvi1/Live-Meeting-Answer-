@@ -116,13 +116,14 @@ class CaptionAssembler(
 
     private fun onActiveText(text: String, newSpeaker: String?, now: Long) {
         val words = TextNorm.words(text).takeLast(MAX_WORDS)
-        if (newSpeaker != null && speaker != null && newSpeaker != speaker) flushPending()
-        if (newSpeaker != null) speaker = newSpeaker
+        val speakerChanged = newSpeaker != null && speaker != null && newSpeaker != speaker
 
         if (words.isEmpty()) {
             commitWords(tail.subList(committedInTail, tail.size), now)
             tail = emptyList()
             committedInTail = 0
+            if (speakerChanged) flushPending()
+            if (newSpeaker != null) speaker = newSpeaker
             emitLive()
             return
         }
@@ -138,6 +139,9 @@ class CaptionAssembler(
             if (offset > committedInTail) commitWords(tail.subList(committedInTail, offset), now)
             committedInTail = maxOf(0, committedInTail - offset)
         }
+        // Words finalized above were said by the previous speaker; switch only now.
+        if (speakerChanged) flushPending()
+        if (newSpeaker != null) speaker = newSpeaker
         tail = words
         committedInTail = minOf(committedInTail, tail.size)
         emitLive()
