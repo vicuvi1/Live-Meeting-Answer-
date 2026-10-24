@@ -95,7 +95,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                 }
             } else {
                 PrefField("Cheie OpenRouter", prefs.openRouterKey, secret = true) { prefs.openRouterKey = it }
-                PrefField("Model", prefs.openRouterModel, hint = "google/gemini-2.5-flash") { prefs.openRouterModel = it }
+                PrefField("Model", prefs.openRouterModel, hint = "anthropic/claude-haiku-5.5") { prefs.openRouterModel = it }
                 TextButton(onClick = { Setup.openUrl(context, "https://openrouter.ai/keys") }) {
                     Text("Obține o cheie pe openrouter.ai", color = Palette.Blue)
                 }
