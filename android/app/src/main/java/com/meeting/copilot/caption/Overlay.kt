@@ -1,17 +1,21 @@
 package com.meeting.copilot.caption
 
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -24,8 +28,8 @@ import kotlin.math.abs
 
 /**
  * Floating bubble over Zoom / Meet. Its colour says what's happening (green: listening,
- * amber: mentioned or a topic came up, red: she was asked something). Tapping it opens a
- * panel with "what did I miss" and the suggested answer; it opens by itself on a question.
+ * amber: mentioned or a topic came up, red and pulsing: she was asked something). Tapping it
+ * opens a panel with the suggested answer and "what did I miss"; it opens by itself on a question.
  */
 @SuppressLint("ClickableViewAccessibility")
 class Overlay(
@@ -34,6 +38,27 @@ class Overlay(
     private val prefs: Prefs,
     private val onDump: () -> Unit,
 ) {
+    private object C {
+        val panel = Color.argb(248, 12, 16, 26)
+        val card = Color.rgb(21, 27, 41)
+        val border = Color.rgb(34, 43, 61)
+        val text = Color.rgb(244, 246, 251)
+        val soft = Color.rgb(201, 209, 224)
+        val muted = Color.rgb(138, 148, 168)
+        val faint = Color.rgb(91, 100, 120)
+        val green = Color.rgb(52, 211, 153)
+        val greenDeep = Color.rgb(14, 59, 44)
+        val amber = Color.rgb(251, 191, 36)
+        val amberDeep = Color.rgb(58, 42, 6)
+        val red = Color.rgb(248, 113, 113)
+        val redStrong = Color.rgb(239, 68, 68)
+        val redDeep = Color.rgb(63, 16, 16)
+        val blue = Color.rgb(124, 167, 255)
+        val blueDeep = Color.rgb(20, 34, 63)
+        val idle = Color.rgb(71, 85, 105)
+        val onAccent = Color.rgb(6, 17, 12)
+    }
+
     private val wm = context.getSystemService(WindowManager::class.java)
     private val density = context.resources.displayMetrics.density
     private fun dp(value: Int) = (value * density).toInt()
@@ -41,7 +66,8 @@ class Overlay(
     private val screenHeight get() = context.resources.displayMetrics.heightPixels
 
     private var bubble: TextView? = null
-    private val bubbleSize = dp(58)
+    private var pulse: ObjectAnimator? = null
+    private val bubbleSize = dp(60)
     private val bubbleParams = WindowManager.LayoutParams(
         bubbleSize, bubbleSize,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -49,9 +75,19 @@ class Overlay(
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        x = screenWidth - bubbleSize - dp(6)
+        x = screenWidth - bubbleSize - dp(8)
         y = (screenHeight * 0.38).toInt()
     }
+
+    companion object {
+        /** True after she dropped the bubble on the ✕; cleared when the meeting ends or from the app. */
+        val hidden = kotlinx.coroutines.flow.MutableStateFlow(false)
+        /** The app itself is open: it shows everything, so the bubble steps aside. */
+        val appVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    }
+
+    private var dismissTarget: TextView? = null
+    private var overTarget = false
 
     private var panel: View? = null
     private var panelContent: LinearLayout? = null
@@ -60,7 +96,9 @@ class Overlay(
     private var keepScreenOn = false
 
     fun render(state: UiState) {
-        val show = prefs.showBubble && (state.meetingVisible || state.status == Status.LISTENING)
+        val inMeeting = state.meetingVisible || state.status == Status.LISTENING
+        if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the bubble again
+        val show = prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
         if (!show) {
             closePanel()
             removeBubble()
@@ -76,29 +114,29 @@ class Overlay(
         if (bubble == null || panel != null) return
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(14))
+            setPadding(dp(18), dp(16), dp(18), dp(18))
         }
         val scroll = object : ScrollView(context) {
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val max = MeasureSpec.makeMeasureSpec((screenHeight * 0.62).toInt(), MeasureSpec.AT_MOST)
+                val max = MeasureSpec.makeMeasureSpec((screenHeight * 0.64).toInt(), MeasureSpec.AT_MOST)
                 super.onMeasure(widthMeasureSpec, max)
             }
         }.apply {
-            background = GradientDrawable().apply {
-                setColor(Color.argb(245, 10, 12, 20))
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.rgb(51, 65, 85))
-            }
+            background = rounded(C.panel, 28, C.border)
+            elevation = dp(12).toFloat()
+            clipToOutline = true
+            isVerticalScrollBarEnabled = false
             addView(content)
         }
         val params = WindowManager.LayoutParams(
-            screenWidth - dp(16), WindowManager.LayoutParams.WRAP_CONTENT,
+            screenWidth - dp(20), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(44)
+            windowAnimations = android.R.style.Animation_Toast
         }
         try {
             wm.addView(scroll, params)
@@ -125,6 +163,7 @@ class Overlay(
     }
 
     fun destroy() {
+        hideDismissTarget()
         closePanel()
         removeBubble()
     }
@@ -135,9 +174,8 @@ class Overlay(
         val view = TextView(context).apply {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
-            elevation = dp(6).toFloat()
+            elevation = dp(8).toFloat()
         }
         var downX = 0f
         var downY = 0f
@@ -152,21 +190,44 @@ class Overlay(
                     startX = bubbleParams.x
                     startY = bubbleParams.y
                     dragging = false
+                    view.animate().scaleX(0.92f).scaleY(0.92f).setDuration(90).start()
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
-                    if (!dragging && (abs(dx) > dp(10) || abs(dy) > dp(10))) dragging = true
+                    if (!dragging && (abs(dx) > dp(10) || abs(dy) > dp(10))) {
+                        dragging = true
+                        showDismissTarget()
+                    }
                     if (dragging) {
                         bubbleParams.x = (startX + dx).toInt()
                         bubbleParams.y = (startY + dy).toInt().coerceIn(0, screenHeight - bubbleSize)
                         update(view, bubbleParams)
+                        highlightTarget(isOverTarget(event.rawX, event.rawY))
                     }
                     true
                 }
-                MotionEvent.ACTION_UP -> {
-                    if (dragging) snapToEdge(view) else if (panel == null) openPanel() else closePanel()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    val dropped = dragging && isOverTarget(event.rawX, event.rawY)
+                    hideDismissTarget()
+                    if (event.action == MotionEvent.ACTION_UP) {
+                        when {
+                            dropped -> {
+                                hidden.value = true
+                                closePanel()
+                                removeBubble()
+                                android.widget.Toast.makeText(
+                                    context, "Bula e ascunsă până la finalul ședinței. O poți reafișa din aplicație.",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            dragging -> snapToEdge(view)
+                            panel == null -> openPanel()
+                            else -> closePanel()
+                        }
+                    }
                     true
                 }
                 else -> false
@@ -182,34 +243,124 @@ class Overlay(
     }
 
     private fun styleBubble(view: TextView, state: UiState) {
-        val now = System.currentTimeMillis()
-        val age = now - state.alertAt
+        val age = System.currentTimeMillis() - state.alertAt
+        val asked = state.alert == AlertLevel.DIRECT && age < 120_000
         val (color, label) = when {
-            state.alert == AlertLevel.DIRECT && age < 120_000 -> Color.rgb(220, 38, 38) to "!"
-            (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC) && age < 60_000 -> Color.rgb(245, 158, 11) to "•"
-            state.health != null -> Color.rgb(180, 83, 9) to "?"
-            state.status == Status.LISTENING -> Color.rgb(22, 163, 74) to ""
-            else -> Color.rgb(71, 85, 105) to "CC"
+            asked -> C.redStrong to "!"
+            (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC) && age < 60_000 -> C.amber to "•"
+            state.health != null -> C.amber to "?"
+            state.status == Status.LISTENING -> C.green to ""
+            else -> C.idle to "CC"
         }
         view.text = label
-        view.textSize = if (label == "CC") 15f else 24f
-        view.background = GradientDrawable().apply {
+        view.textSize = if (label == "CC") 14f else 26f
+        view.setTextColor(if (color == C.green || color == C.amber) C.onAccent else Color.WHITE)
+        // Outer soft halo + solid core with a thin light ring.
+        val halo = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(70, Color.red(color), Color.green(color), Color.blue(color)))
+        }
+        val core = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(color)
-            setStroke(dp(2), Color.argb(200, 255, 255, 255))
+            setStroke(dp(2), Color.argb(150, 255, 255, 255))
+        }
+        view.background = LayerDrawable(arrayOf(halo, core)).apply { setLayerInset(1, dp(5), dp(5), dp(5), dp(5)) }
+        setPulsing(view, asked)
+    }
+
+    private fun setPulsing(view: View, on: Boolean) {
+        if (on && pulse == null) {
+            pulse = ObjectAnimator.ofPropertyValuesHolder(
+                view,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.14f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.14f),
+            ).apply {
+                duration = 650
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
+            }
+        } else if (!on && pulse != null) {
+            pulse?.cancel()
+            pulse = null
+            view.scaleX = 1f
+            view.scaleY = 1f
         }
     }
 
     private fun snapToEdge(view: View) {
-        val targetX = if (bubbleParams.x + bubbleSize / 2 < screenWidth / 2) dp(6) else screenWidth - bubbleSize - dp(6)
+        val targetX = if (bubbleParams.x + bubbleSize / 2 < screenWidth / 2) dp(8) else screenWidth - bubbleSize - dp(8)
         ValueAnimator.ofInt(bubbleParams.x, targetX).apply {
-            duration = 180
+            duration = 200
             addUpdateListener {
                 bubbleParams.x = it.animatedValue as Int
                 update(view, bubbleParams)
             }
             start()
         }
+    }
+
+    // ---------------------------------------------------------------- drag-to-dismiss target
+
+    private val targetSize get() = dp(68)
+    private val targetCenterX get() = screenWidth / 2f
+    private val targetCenterY get() = screenHeight - dp(110).toFloat()
+
+    private fun showDismissTarget() {
+        if (dismissTarget != null) return
+        val view = TextView(context).apply {
+            text = "✕"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(200, 30, 36, 50))
+                setStroke(dp(2), Color.argb(160, 255, 255, 255))
+            }
+        }
+        val params = WindowManager.LayoutParams(
+            targetSize, targetSize,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (targetCenterX - targetSize / 2).toInt()
+            y = (targetCenterY - targetSize / 2).toInt()
+        }
+        try {
+            wm.addView(view, params)
+            dismissTarget = view
+            overTarget = false
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun isOverTarget(rawX: Float, rawY: Float): Boolean {
+        if (dismissTarget == null) return false
+        val dx = rawX - targetCenterX
+        val dy = rawY - targetCenterY
+        return dx * dx + dy * dy < (dp(90) * dp(90)).toFloat()
+    }
+
+    private fun highlightTarget(on: Boolean) {
+        if (on == overTarget) return
+        overTarget = on
+        val view = dismissTarget ?: return
+        // Colour change only: scaling would clip the circle at its window's edges.
+        (view.background as? GradientDrawable)?.setColor(if (on) C.redStrong else Color.argb(200, 30, 36, 50))
+    }
+
+    private fun hideDismissTarget() {
+        val view = dismissTarget ?: return
+        try {
+            wm.removeView(view)
+        } catch (_: Exception) {
+        }
+        dismissTarget = null
+        overTarget = false
     }
 
     private fun setKeepScreenOn(on: Boolean) {
@@ -226,6 +377,8 @@ class Overlay(
 
     private fun removeBubble() {
         val view = bubble ?: return
+        pulse?.cancel()
+        pulse = null
         try {
             wm.removeView(view)
         } catch (_: Exception) {
@@ -250,121 +403,195 @@ class Overlay(
         lastPanelState = state
         // The live line changes several times a second: update just that view when nothing else changed.
         if (previous != null && previous.copy(live = "", liveSpeaker = null) == state.copy(live = "", liveSpeaker = null)) {
-            liveView?.text = liveText(state)
+            liveView?.let { setLive(it, state) }
             return
         }
         content.removeAllViews()
         val now = System.currentTimeMillis()
 
-        // Header
-        val header = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(text(statusText(state, now), 14f, Color.rgb(148, 163, 184)), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(smallButton("✕") { closePanel() })
+        // Header: status pill + close
+        val header = row()
+        val (statusColor, statusText) = statusOf(state, now)
+        header.addView(statusPill(statusText, statusColor), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(closeButton())
         content.addView(header)
 
-        state.health?.let { content.addView(text("⚠ $it", 15f, Color.rgb(251, 191, 36)).withTop(6)) }
+        state.health?.let { content.addView(note("⚠  $it", C.amber).top(10)) }
 
         // Answer
         val answer = state.answer
         if (answer != null && (now - answer.createdAt < 5 * 60_000 || state.answerLoading)) {
-            content.addView(label("ÎNTREBAREA", Color.rgb(248, 113, 113)).withTop(12))
-            content.addView(text(answer.question, 18f, Color.WHITE))
-            answer.context.forEach { content.addView(text("· $it", 14f, Color.rgb(148, 163, 184))) }
-            content.addView(label("SPUNE", Color.rgb(74, 222, 128)).withTop(10))
+            val card = card(C.redDeep, C.red)
+            card.addView(eyebrow("ÎNTREBARE PENTRU TINE", C.red))
+            card.addView(text(answer.question, 19f, C.text, bold = true).top(6))
+            answer.context.forEach { card.addView(text("·  $it", 14f, C.muted).top(4)) }
+
+            val say = card(C.greenDeep, C.green)
+            say.addView(eyebrow("SPUNE", C.green))
             when {
                 answer.answer.isNotBlank() -> {
-                    content.addView(text(answer.answer, 23f, Color.WHITE, bold = true))
-                    if (!answer.confident) content.addView(text("Răspuns prudent: nu am date sigure despre asta.", 13f, Color.rgb(148, 163, 184)))
+                    say.addView(text(answer.answer, 23f, C.text, bold = true).top(6))
+                    if (!answer.confident) say.addView(text("Răspuns prudent: nu am date sigure despre asta.", 13f, C.muted).top(8))
                 }
-                state.answerLoading -> content.addView(text("Pregătesc răspunsul…", 18f, Color.rgb(148, 163, 184)))
+                state.answerLoading -> say.addView(text("Pregătesc răspunsul…", 18f, C.soft).top(6))
+                state.answerError != null -> say.addView(text(state.answerError, 15f, C.red).top(6))
             }
-            state.answerError?.let { content.addView(text(it, 14f, Color.rgb(248, 113, 113))) }
-            content.addView(smallButton("Am răspuns") { engine.dismissAnswer() }.withTop(6))
+            card.addView(say.top(14))
+            card.addView(button("Am răspuns", C.red, filled = false) { engine.dismissAnswer() }.top(12))
+            content.addView(card.top(14))
         } else {
-            state.answerError?.let { content.addView(text(it, 14f, Color.rgb(248, 113, 113)).withTop(8)) }
+            state.answerError?.let { content.addView(note(it, C.red).top(10)) }
         }
 
         // Catch-up
         val catchUp = state.catchUp
         if (catchUp != null && catchUp.topic.isNotBlank()) {
-            content.addView(label("ACUM SE DISCUTĂ", Color.rgb(96, 165, 250)).withTop(14))
-            content.addView(text(catchUp.topic, 19f, Color.WHITE, bold = true))
-            catchUp.points.forEach { content.addView(text("• $it", 16f, Color.rgb(226, 232, 240))) }
+            val card = card(C.card, C.border)
+            val head = row()
+            head.addView(eyebrow("ACUM SE DISCUTĂ", C.blue), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            head.addView(text(updatedText(catchUp.updatedAt, now, state.catchUpLoading), 12f, C.faint))
+            card.addView(head)
+            card.addView(text(catchUp.topic, 19f, C.text, bold = true).top(6))
+            catchUp.points.forEach { card.addView(text("•  $it", 16f, C.soft).top(5)) }
             if (catchUp.forMe.isNotBlank()) {
-                content.addView(label("DE LA TINE SE AȘTEAPTĂ", Color.rgb(251, 191, 36)).withTop(8))
-                content.addView(text(catchUp.forMe, 18f, Color.rgb(253, 230, 138), bold = true))
+                val forMe = card(C.amberDeep, C.amber)
+                forMe.addView(eyebrow("DE LA TINE SE AȘTEAPTĂ", C.amber))
+                forMe.addView(text(catchUp.forMe, 17f, Color.rgb(253, 231, 168), bold = true).top(4))
+                card.addView(forMe.top(12))
             }
-            content.addView(text(updatedText(catchUp.updatedAt, now, state.catchUpLoading), 12f, Color.rgb(100, 116, 139)).withTop(4))
+            content.addView(card.top(12))
         } else if (state.lines.isNotEmpty()) {
-            content.addView(label("ULTIMELE REPLICI", Color.rgb(96, 165, 250)).withTop(14))
+            val card = card(C.card, C.border)
+            card.addView(eyebrow("ULTIMELE REPLICI", C.blue))
             state.lines.takeLast(4).forEach { line ->
-                content.addView(text((line.speaker?.let { "$it: " } ?: "") + line.text, 15f, Color.rgb(226, 232, 240)))
+                card.addView(text(line.speaker ?: "Participant", 12f, C.blue, bold = true).top(8))
+                card.addView(text(line.text, 15f, C.soft))
             }
-            if (state.catchUpLoading) content.addView(text("Pregătesc rezumatul…", 13f, Color.rgb(148, 163, 184)))
+            if (state.catchUpLoading) card.addView(text("Pregătesc rezumatul…", 13f, C.muted).top(8))
+            content.addView(card.top(12))
         }
-        state.catchUpError?.let { content.addView(text(it, 13f, Color.rgb(248, 113, 113))) }
+        state.catchUpError?.let { content.addView(note(it, C.red).top(8)) }
 
-        val live = text(liveText(state), 14f, Color.rgb(148, 163, 184)).apply { setTypeface(typeface, Typeface.ITALIC) }
+        val live = text("", 14f, C.muted).apply { setTypeface(typeface, Typeface.ITALIC) }
+        setLive(live, state)
         liveView = live
-        content.addView(live.withTop(10))
+        content.addView(live.top(10))
 
-        val buttons = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        buttons.addView(bigButton("Ce am pierdut?") { engine.requestCatchUp() }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        buttons.addView(bigButton("Ce să răspund?") { engine.requestAnswer() }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        content.addView(buttons.withTop(10))
-        if (prefs.diagnostics) content.addView(smallButton("Captură diagnostic") { onDump() })
+        val buttons = row()
+        buttons.addView(button("Ce am pierdut?", C.green, filled = true) { engine.requestCatchUp() }, weighted().apply { marginEnd = dp(6) })
+        buttons.addView(button("Ce să răspund?", C.blue, filled = false) { engine.requestAnswer() }, weighted().apply { marginStart = dp(6) })
+        content.addView(buttons.top(12))
+        if (prefs.diagnostics) content.addView(button("Captură diagnostic", C.muted, filled = false) { onDump() }.top(8))
     }
 
-    private fun statusText(state: UiState, now: Long): String = when {
-        state.status == Status.LISTENING && !state.meetingVisible ->
-            "${state.meetingApp ?: "Ședința"} nu e pe ecran: nu pot citi subtitrările"
+    private fun statusOf(state: UiState, now: Long): Pair<Int, String> = when {
+        state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "${state.meetingApp ?: "Ședința"} nu e pe ecran"
         state.status == Status.LISTENING -> {
             val minutes = state.startedAt?.let { (now - it) / 60_000 } ?: 0
-            "● Ascult · ${state.meetingApp ?: ""} · $minutes min"
+            C.green to "Ascult · ${state.meetingApp ?: ""} · $minutes min"
         }
-        state.status == Status.WAITING_CAPTIONS -> "Aștept subtitrările (apasă CC)"
-        else -> "Nicio ședință"
+        state.status == Status.WAITING_CAPTIONS -> C.amber to "Pornește subtitrările (CC)"
+        else -> C.idle to "Nicio ședință"
     }
 
-    private fun liveText(state: UiState): String =
-        if (state.live.isBlank()) "" else "… " + (state.liveSpeaker?.let { "$it: " } ?: "") + state.live.takeLast(200)
+    private fun setLive(view: TextView, state: UiState) {
+        val text = if (state.live.isBlank()) "" else "… " + (state.liveSpeaker?.let { "$it: " } ?: "") + state.live.takeLast(200)
+        view.text = text
+        view.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+    }
 
     private fun updatedText(updatedAt: Long, now: Long, loading: Boolean): String {
         if (loading) return "se actualizează…"
         val seconds = (now - updatedAt) / 1000
-        return if (seconds < 60) "actualizat acum $seconds s" else "actualizat acum ${seconds / 60} min"
+        return if (seconds < 60) "acum $seconds s" else "acum ${seconds / 60} min"
     }
 
-    private fun label(value: String, color: Int) = text(value, 12f, color, bold = true).apply { letterSpacing = 0.08f }
+    // ---------------------------------------------------------------- view helpers
+
+    private fun rounded(color: Int, radiusDp: Int, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radiusDp).toFloat()
+        if (stroke != null) setStroke(dp(1), stroke)
+    }
+
+    private fun row() = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
+
+    private fun weighted() = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+
+    private fun card(background: Int, accent: Int) = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(14), dp(16), dp(16))
+        val border = if (accent == C.border) C.border else Color.argb(90, Color.red(accent), Color.green(accent), Color.blue(accent))
+        this.background = rounded(background, 20, border)
+    }
 
     private fun text(value: String, size: Float, color: Int, bold: Boolean = false) = TextView(context).apply {
         text = value
         textSize = size
         setTextColor(color)
         if (bold) typeface = Typeface.DEFAULT_BOLD
-        setLineSpacing(0f, 1.1f)
+        setLineSpacing(dp(2).toFloat(), 1f)
     }
 
-    private fun bigButton(value: String, onClick: () -> Unit) = Button(context).apply {
+    private fun eyebrow(value: String, color: Int) = text(value, 11.5f, color, bold = true).apply { letterSpacing = 0.1f }
+
+    private fun note(value: String, color: Int) = text(value, 14f, color)
+
+    private fun statusPill(value: String, color: Int): View {
+        val pill = row().apply {
+            setPadding(dp(12), dp(7), dp(14), dp(7))
+            background = rounded(Color.argb(40, Color.red(color), Color.green(color), Color.blue(color)), 50)
+        }
+        val dot = View(context).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color)
+            }
+        }
+        pill.addView(dot, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
+        pill.addView(text(value, 13f, color, bold = true))
+        return LinearLayout(context).apply { addView(pill) } // keep the pill content-sized inside the weighted slot
+    }
+
+    private fun closeButton() = TextView(context).apply {
+        text = "✕"
+        textSize = 15f
+        gravity = Gravity.CENTER
+        setTextColor(C.soft)
+        background = RippleDrawable(ColorStateList.valueOf(Color.argb(60, 255, 255, 255)), GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(C.card)
+            setStroke(dp(1), C.border)
+        }, null)
+        layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+        setOnClickListener { closePanel() }
+    }
+
+    private fun button(value: String, accent: Int, filled: Boolean, onClick: () -> Unit) = TextView(context).apply {
         text = value
-        isAllCaps = false
-        textSize = 16f
+        textSize = 15.5f
+        typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        minHeight = dp(50)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        val base = if (filled) {
+            rounded(accent, 16)
+        } else {
+            rounded(
+                Color.argb(36, Color.red(accent), Color.green(accent), Color.blue(accent)), 16,
+                Color.argb(90, Color.red(accent), Color.green(accent), Color.blue(accent)),
+            )
+        }
+        setTextColor(if (filled) C.onAccent else accent)
+        background = RippleDrawable(ColorStateList.valueOf(Color.argb(70, 255, 255, 255)), base, null)
+        isClickable = true
         setOnClickListener { onClick() }
     }
 
-    private fun smallButton(value: String, onClick: () -> Unit) = Button(context).apply {
-        text = value
-        isAllCaps = false
-        textSize = 13f
-        minHeight = 0
-        minimumHeight = 0
-        setOnClickListener { onClick() }
-    }
-
-    private fun <T : View> T.withTop(topDp: Int): T = apply {
+    private fun <T : View> T.top(topDp: Int): T = apply {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(topDp)
         }

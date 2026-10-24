@@ -30,6 +30,8 @@ class Prefs(context: Context) {
     var vibrate by flag("vibrate", true)
     var whisperQuestion by flag("whisper_question", false)
     var showBubble by flag("show_bubble", true)
+    /** Press the captions button in Zoom/Meet automatically and choose Romanian. */
+    var autoCaptions by flag("auto_captions", true)
     var diagnostics by flag("diagnostics", false)
     var diagnosticsAllApps by flag("diagnostics_all_apps", false)
 

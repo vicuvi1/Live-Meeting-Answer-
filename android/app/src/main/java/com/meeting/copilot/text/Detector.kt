@@ -85,6 +85,26 @@ class Detector(names: List<String>, topics: List<String>) {
             "\\?",
         ).map { Regex(it) }
 
+        private val ENGLISH = setOf(
+            "the", "and", "you", "is", "to", "of", "that", "we", "it", "this", "are", "have", "for", "what",
+            "with", "be", "can", "so", "just", "do", "not", "will", "they", "about",
+        )
+        private val ROMANIAN = setOf(
+            "si", "este", "ca", "nu", "pe", "de", "la", "sa", "cu", "un", "ce", "mai", "am", "ne", "sunt",
+            "pentru", "asta", "care", "dar", "vom", "acum", "foarte", "trebuie",
+        )
+
+        /** True when the captions are clearly in English (wrong caption language in Zoom/Meet). */
+        fun looksEnglish(texts: List<String>): Boolean {
+            var english = 0
+            var romanian = 0
+            for (word in texts.flatMap { TextNorm.words(it) }.map(TextNorm::key)) {
+                if (word in ENGLISH) english++
+                if (word in ROMANIAN) romanian++
+            }
+            return english >= 6 && english > romanian * 2
+        }
+
         fun isQuestion(text: String): Boolean {
             val normalized = TextNorm.norm(text)
             return QUESTION_PATTERNS.any { it.containsMatchIn(normalized) }

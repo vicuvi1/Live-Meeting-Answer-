@@ -28,11 +28,14 @@ class CaptionService : AccessibilityService() {
 
     companion object {
         const val LIVE_CAPTION = "com.google.android.as"
+        /** Gmail hosts Meet calls on many phones; it counts only while its screen shows call controls. */
+        const val GMAIL = "com.google.android.gm"
         val MEETING_PACKAGES = setOf(
             "us.zoom.videomeetings",
             "com.google.android.apps.tachyon",
             "com.google.android.apps.meetings",
             "com.microsoft.teams",
+            GMAIL,
             LIVE_CAPTION,
         )
         private val IGNORED_PACKAGES = setOf("com.android.systemui", "com.miui.home", "com.mi.android.globallauncher")
@@ -64,6 +67,7 @@ class CaptionService : AccessibilityService() {
     private var scanPending = false
     private var overlay: Overlay? = null
     private var allAppsMode: Boolean? = null
+    private val autoCaptions = AutoCaptions()
     private val diagLastText = HashMap<String, String>()
 
     private val poll = object : Runnable {
@@ -82,6 +86,8 @@ class CaptionService : AccessibilityService() {
         this.overlay = overlay
         scope.launch { app.engine.state.collect { overlay.render(it) } }
         scope.launch { app.engine.openPanel.collect { overlay.openPanel() } }
+        scope.launch { Overlay.hidden.collect { overlay.render(app.engine.state.value) } }
+        scope.launch { Overlay.appVisible.collect { overlay.render(app.engine.state.value) } }
         scope.launch {
             app.prefs.version.collect {
                 applyPackageFilter()
@@ -142,6 +148,7 @@ class CaptionService : AccessibilityService() {
         val builders = LinkedHashMap<String, RegionBuilder>()
         val budget = intArrayOf(MAX_NODES)
         var meetingPackage: String? = null
+        val meetingRoots = mutableListOf<AccessibilityNodeInfo>()
 
         for (window in allWindows) {
             if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
@@ -150,16 +157,28 @@ class CaptionService : AccessibilityService() {
             val root = window.root ?: continue
             val pkg = root.packageName?.toString() ?: continue
             if (pkg == packageName || pkg in IGNORED_PACKAGES) continue
-            val isMeeting = pkg in MEETING_PACKAGES
+            var isMeeting = pkg in MEETING_PACKAGES
+            if (pkg == GMAIL && !AutoCaptions.hasCallControls(root)) isMeeting = false
             if (!isMeeting && !allApps) continue
-            if (isMeeting && pkg != LIVE_CAPTION && meetingPackage == null) meetingPackage = pkg
-            collect(root, pkg, builders, 0, budget)
+            if (isMeeting && pkg != LIVE_CAPTION) {
+                if (meetingPackage == null) meetingPackage = pkg
+                meetingRoots.add(root)
+            }
+            if (isMeeting || allApps) collect(root, pkg, builders, 0, budget)
         }
 
         val regions = builders.values.map { it.build() }
         if (diagnostics) logRegions(regions)
         app.engine.onScan(meetingPackage != null, meetingPackage)
-        app.engine.assembler.observe(regions.filter { it.key.substringBefore('|') in MEETING_PACKAGES })
+        app.engine.assembler.observe(regions.filter {
+            val pkg = it.key.substringBefore('|')
+            pkg in MEETING_PACKAGES && (pkg != GMAIL || meetingPackage == GMAIL)
+        })
+
+        val assembler = app.engine.assembler
+        val flowing = assembler.activeKey != null && System.currentTimeMillis() - assembler.lastActiveChange < 30_000
+        autoCaptions.onScan(meetingRoots, meetingPackage != null, flowing, app.prefs.autoCaptions, System.currentTimeMillis())
+            ?.let { app.engine.onAutoCaptions(it) }
     }
 
     private fun collect(
