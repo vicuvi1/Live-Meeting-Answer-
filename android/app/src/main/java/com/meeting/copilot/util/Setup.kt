@@ -158,8 +158,20 @@ object UpdateChecker {
         false
     }
 
-    /** Null when up to date; throws on network errors. */
-    suspend fun check(): Update? = withContext(Dispatchers.IO) {
+    private const val CACHE_MS = 30 * 60_000L
+    private var cached: Pair<Long, Update?>? = null
+
+    /**
+     * Null when up to date; throws on network errors. Cached for 30 minutes because GitHub
+     * allows only 60 anonymous checks an hour; [force] (the Settings button) skips the cache.
+     */
+    suspend fun check(force: Boolean = false): Update? {
+        val hit = cached
+        if (!force && hit != null && System.currentTimeMillis() - hit.first < CACHE_MS) return hit.second
+        return fetch().also { cached = System.currentTimeMillis() to it }
+    }
+
+    private suspend fun fetch(): Update? = withContext(Dispatchers.IO) {
         val connection = (URL(LATEST).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000
             readTimeout = 10_000

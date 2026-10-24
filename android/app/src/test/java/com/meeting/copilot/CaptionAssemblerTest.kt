@@ -92,6 +92,14 @@ class CaptionAssemblerTest {
     }
 
     @Test
+    fun fastTurnTakingKeepsEachSpeakersWords() {
+        show("Eu cred că e bine", speaker = "Radu")
+        show("Și eu sunt de acord", speaker = "Ana") // no pause in between
+        pause()
+        assertEquals(listOf("Radu" to "Eu cred că e bine", "Ana" to "Și eu sunt de acord"), utterances)
+    }
+
+    @Test
     fun staticLabelsNeverBecomeTheSource() {
         repeat(10) {
             assembler.observe(listOf(Region("zoom|button", "Dezactivează sunetul", null, explicit = false)))
