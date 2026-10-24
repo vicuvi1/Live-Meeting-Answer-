@@ -231,7 +231,8 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
             )
             status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 8.dp)) }
             update?.let { u ->
-                AppButton("Descarcă actualizarea", { Setup.openUrl(context, u.url) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                Spacer(Modifier.height(10.dp))
+                UpdateCard(u, resumes)
             }
         }
         Spacer(Modifier.height(24.dp))
