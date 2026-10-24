@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -93,20 +92,7 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
             SetupCard(serviceOn, notificationsOk, hasName, hasKey, onOpenSettings)
         }
 
-        update?.let { u ->
-            AppCard(tone = Tone.Info) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Star, null, tint = Palette.Blue, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text("Versiune nouă: ${u.name}", style = MaterialTheme.typography.titleSmall, color = Palette.Text, modifier = Modifier.weight(1f))
-                }
-                Text(
-                    "Se descarcă în browser. Apoi atinge fișierul și alege Actualizează: datele rămân.",
-                    style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
-                )
-                AppButton("Descarcă actualizarea", { Setup.openUrl(context, u.url) }, tone = Tone.Info, modifier = Modifier.fillMaxWidth())
-            }
-        }
+        update?.let { UpdateCard(it, resumes) }
 
         val bubbleHidden by Overlay.hidden.collectAsState()
         if (bubbleHidden && (state.meetingVisible || state.status == Status.LISTENING)) {

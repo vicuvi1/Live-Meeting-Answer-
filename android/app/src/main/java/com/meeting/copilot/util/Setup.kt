@@ -11,10 +11,13 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.meeting.copilot.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -82,11 +85,78 @@ object Setup {
     }
 }
 
-/** Looks for a newer build on GitHub Releases (each CI build is tagged build-<number>). */
+/**
+ * Looks for a newer build on GitHub Releases (each CI build is tagged build-<number>),
+ * downloads it inside the app and hands it to the Android installer: one tap for her.
+ */
 object UpdateChecker {
     private const val LATEST = "https://api.github.com/repos/vicuvi1/Live-Meeting-Answer-/releases/latest"
 
-    data class Update(val versionCode: Int, val name: String, val url: String)
+    data class Update(val versionCode: Int, val name: String, val url: String, val size: Long)
+
+    /** Downloads the APK into the app's cache, reporting progress 0–100. */
+    suspend fun download(context: Context, update: Update, onProgress: (Int) -> Unit): File = withContext(Dispatchers.IO) {
+        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val file = File(dir, "asistent-${update.versionCode}.apk")
+        val connection = (URL(update.url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            instanceFollowRedirects = true // GitHub redirects to its file storage
+        }
+        try {
+            if (connection.responseCode !in 200..299) throw IOException("HTTP ${connection.responseCode}")
+            val total = connection.contentLengthLong.takeIf { it > 0 } ?: update.size
+            connection.inputStream.use { input ->
+                file.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var done = 0L
+                    var lastPercent = -1
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        done += read
+                        val percent = if (total > 0) (done * 100 / total).toInt() else 0
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onProgress(percent)
+                        }
+                    }
+                }
+            }
+            if (update.size > 0 && file.length() != update.size) throw IOException("descărcare incompletă")
+            file
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** Android asks once per app before it may install updates ("Install unknown apps"). */
+    fun canInstall(context: Context): Boolean = context.packageManager.canRequestPackageInstalls()
+
+    fun openInstallPermission(context: Context) {
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: ActivityNotFoundException) {
+        }
+    }
+
+    /** Opens Android's "Update this app?" screen for the downloaded file. */
+    fun install(context: Context, file: File): Boolean = try {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+    } catch (_: Exception) {
+        false
+    }
 
     /** Null when up to date; throws on network errors. */
     suspend fun check(): Update? = withContext(Dispatchers.IO) {
@@ -104,7 +174,7 @@ object UpdateChecker {
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
                 if (asset.optString("name").endsWith(".apk")) {
-                    return@withContext Update(code, json.optString("name"), asset.optString("browser_download_url"))
+                    return@withContext Update(code, json.optString("name"), asset.optString("browser_download_url"), asset.optLong("size"))
                 }
             }
             null
