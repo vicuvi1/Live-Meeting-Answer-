@@ -79,6 +79,16 @@ class Overlay(
         y = (screenHeight * 0.38).toInt()
     }
 
+    companion object {
+        /** True after she dropped the bubble on the ✕; cleared when the meeting ends or from the app. */
+        val hidden = kotlinx.coroutines.flow.MutableStateFlow(false)
+        /** The app itself is open: it shows everything, so the bubble steps aside. */
+        val appVisible = kotlinx.coroutines.flow.MutableStateFlow(false)
+    }
+
+    private var dismissTarget: TextView? = null
+    private var overTarget = false
+
     private var panel: View? = null
     private var panelContent: LinearLayout? = null
     private var liveView: TextView? = null
@@ -86,7 +96,9 @@ class Overlay(
     private var keepScreenOn = false
 
     fun render(state: UiState) {
-        val show = prefs.showBubble && (state.meetingVisible || state.status == Status.LISTENING)
+        val inMeeting = state.meetingVisible || state.status == Status.LISTENING
+        if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the bubble again
+        val show = prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
         if (!show) {
             closePanel()
             removeBubble()
@@ -151,6 +163,7 @@ class Overlay(
     }
 
     fun destroy() {
+        hideDismissTarget()
         closePanel()
         removeBubble()
     }
@@ -183,18 +196,37 @@ class Overlay(
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - downX
                     val dy = event.rawY - downY
-                    if (!dragging && (abs(dx) > dp(10) || abs(dy) > dp(10))) dragging = true
+                    if (!dragging && (abs(dx) > dp(10) || abs(dy) > dp(10))) {
+                        dragging = true
+                        showDismissTarget()
+                    }
                     if (dragging) {
                         bubbleParams.x = (startX + dx).toInt()
                         bubbleParams.y = (startY + dy).toInt().coerceIn(0, screenHeight - bubbleSize)
                         update(view, bubbleParams)
+                        highlightTarget(isOverTarget(event.rawX, event.rawY))
                     }
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    val dropped = dragging && isOverTarget(event.rawX, event.rawY)
+                    hideDismissTarget()
                     if (event.action == MotionEvent.ACTION_UP) {
-                        if (dragging) snapToEdge(view) else if (panel == null) openPanel() else closePanel()
+                        when {
+                            dropped -> {
+                                hidden.value = true
+                                closePanel()
+                                removeBubble()
+                                android.widget.Toast.makeText(
+                                    context, "Bula e ascunsă până la finalul ședinței. O poți reafișa din aplicație.",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            dragging -> snapToEdge(view)
+                            panel == null -> openPanel()
+                            else -> closePanel()
+                        }
                     }
                     true
                 }
@@ -267,6 +299,68 @@ class Overlay(
             }
             start()
         }
+    }
+
+    // ---------------------------------------------------------------- drag-to-dismiss target
+
+    private val targetSize get() = dp(68)
+    private val targetCenterX get() = screenWidth / 2f
+    private val targetCenterY get() = screenHeight - dp(110).toFloat()
+
+    private fun showDismissTarget() {
+        if (dismissTarget != null) return
+        val view = TextView(context).apply {
+            text = "✕"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(200, 30, 36, 50))
+                setStroke(dp(2), Color.argb(160, 255, 255, 255))
+            }
+        }
+        val params = WindowManager.LayoutParams(
+            targetSize, targetSize,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (targetCenterX - targetSize / 2).toInt()
+            y = (targetCenterY - targetSize / 2).toInt()
+        }
+        try {
+            wm.addView(view, params)
+            dismissTarget = view
+            overTarget = false
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun isOverTarget(rawX: Float, rawY: Float): Boolean {
+        if (dismissTarget == null) return false
+        val dx = rawX - targetCenterX
+        val dy = rawY - targetCenterY
+        return dx * dx + dy * dy < (dp(90) * dp(90)).toFloat()
+    }
+
+    private fun highlightTarget(on: Boolean) {
+        if (on == overTarget) return
+        overTarget = on
+        val view = dismissTarget ?: return
+        // Colour change only: scaling would clip the circle at its window's edges.
+        (view.background as? GradientDrawable)?.setColor(if (on) C.redStrong else Color.argb(200, 30, 36, 50))
+    }
+
+    private fun hideDismissTarget() {
+        val view = dismissTarget ?: return
+        try {
+            wm.removeView(view)
+        } catch (_: Exception) {
+        }
+        dismissTarget = null
+        overTarget = false
     }
 
     private fun setKeepScreenOn(on: Boolean) {

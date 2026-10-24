@@ -8,5 +8,5 @@
     android:canRetrieveWindowContent="true"
     android:isAccessibilityTool="true"
     android:notificationTimeout="100"
-    android:packageNames="us.zoom.videomeetings,com.google.android.apps.tachyon,com.google.android.apps.meetings,com.microsoft.teams,com.google.android.as"
+    android:packageNames="us.zoom.videomeetings,com.google.android.apps.tachyon,com.google.android.apps.meetings,com.google.android.gm,com.microsoft.teams,com.google.android.as"
     android:description="@string/service_description" />

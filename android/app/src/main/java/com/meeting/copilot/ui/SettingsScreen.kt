@@ -134,6 +134,14 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
             )
         }
 
+        SettingsGroup("Subtitrări", Icons.Filled.PlayArrow, Tone.Info) {
+            PrefSwitch(
+                "Pornește subtitrările automat",
+                "Apasă singură butonul CC în Zoom / Meet și alege limba română",
+                prefs.autoCaptions,
+            ) { prefs.autoCaptions = it }
+        }
+
         SettingsGroup("Alerte", Icons.Filled.Notifications, Tone.Warning) {
             PrefSwitch("Vibrații", "Diferite pentru întrebare, mențiune, subiect", prefs.vibrate) { prefs.vibrate = it }
             PrefSwitch("Citește întrebarea în cască", "Doar când sunt conectate căști", prefs.whisperQuestion) { prefs.whisperQuestion = it }

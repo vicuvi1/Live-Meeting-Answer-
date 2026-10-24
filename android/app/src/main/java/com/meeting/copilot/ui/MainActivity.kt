@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.meeting.copilot.App
+import com.meeting.copilot.caption.Overlay
 import com.meeting.copilot.util.Setup
 
 class MainActivity : ComponentActivity() {
@@ -79,6 +80,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Overlay.appVisible.value = true
+    }
+
+    override fun onPause() {
+        Overlay.appVisible.value = false
+        super.onPause()
     }
 
     fun requestNotifications() {

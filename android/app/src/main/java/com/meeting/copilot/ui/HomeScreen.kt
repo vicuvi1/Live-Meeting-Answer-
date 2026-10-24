@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meeting.copilot.App
 import com.meeting.copilot.caption.CaptionService
+import com.meeting.copilot.caption.Overlay
 import com.meeting.copilot.engine.AlertLevel
 import com.meeting.copilot.engine.Status
 import com.meeting.copilot.engine.UiState
@@ -104,6 +105,16 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
                     style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
                 )
                 AppButton("Descarcă actualizarea", { Setup.openUrl(context, u.url) }, tone = Tone.Info, modifier = Modifier.fillMaxWidth())
+            }
+        }
+
+        val bubbleHidden by Overlay.hidden.collectAsState()
+        if (bubbleHidden && (state.meetingVisible || state.status == Status.LISTENING)) {
+            AppCard(padding = 16.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Bula e ascunsă", style = MaterialTheme.typography.titleSmall, color = Palette.Text, modifier = Modifier.weight(1f))
+                    AppButton("Arat-o", { Overlay.hidden.value = false }, style = ButtonStyle.Tonal, height = 40.dp)
+                }
             }
         }
 
@@ -257,7 +268,7 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Apasă butonul CC (subtitrări) în Zoom sau Meet și alege limba română. Bula devine verde când încep să ascult.",
+                "Pornesc singură subtitrările în română. Dacă nu reușesc în câteva secunde, apasă CC (subtitrări) și alege română. Bula devine verde când ascult.",
                 style = MaterialTheme.typography.bodyMedium, color = Palette.TextSoft,
             )
             HealthLine(state.health)
@@ -273,7 +284,7 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
                 )
             }
             HowToStep(1, "Intră în ședință în Zoom sau Meet, pe acest telefon")
-            HowToStep(2, "Apasă CC (subtitrări) și alege română")
+            HowToStep(2, "Pornesc singură subtitrările în română")
             HowToStep(3, "Bula verde de pe margine înseamnă că ascult")
             Spacer(Modifier.height(10.dp))
             AppButton("Încearcă un test fără ședință", onTest, style = ButtonStyle.Ghost, icon = Icons.Filled.PlayArrow, modifier = Modifier.fillMaxWidth())

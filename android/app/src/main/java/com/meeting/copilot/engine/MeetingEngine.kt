@@ -99,6 +99,7 @@ class MeetingEngine(
             "us.zoom.videomeetings" to "Zoom",
             "com.google.android.apps.tachyon" to "Meet",
             "com.google.android.apps.meetings" to "Meet",
+            "com.google.android.gm" to "Meet",
             "com.microsoft.teams" to "Teams",
             "com.google.android.as" to "Live Caption",
         )
@@ -140,6 +141,7 @@ class MeetingEngine(
     private val lastTopicAlert = HashMap<String, Long>()
     /** After she ends a meeting by hand, captions still on screen must not start a new one. */
     private var suppressUntilHidden = false
+    private var languageWarned = false
 
     init {
         main.launch(dbThread) { runCatching { db.closeDanglingMeetings() } }
@@ -192,6 +194,12 @@ class MeetingEngine(
         ensureSession()
         lastCaptionAt = now()
         addLine(text, speaker, startedAt)
+    }
+
+    /** The service pressed a captions control by itself; show it so she knows what happened. */
+    fun onAutoCaptions(action: String) {
+        if (sessionActive) return
+        _state.update { it.copy(health = "Pornesc subtitrările în română automat…") }
     }
 
     /** Settings → test: behaves exactly like a caption line from a real meeting. */
@@ -338,6 +346,7 @@ class MeetingEngine(
         lastCaptionAt = now
         lastDigestAt = now
         noCaptionsWarned = false
+        languageWarned = false
         pendingMentionAt = 0L
         lastTopicAlert.clear()
         lines.clear()
@@ -381,6 +390,12 @@ class MeetingEngine(
         val line = Line(nextLocalId++, ts, speaker, text, flags = flags)
         lines.add(line)
         _state.update { it.copy(lines = lines.takeLast(40)) }
+        if (!languageWarned && lines.size % 4 == 0 && Detector.looksEnglish(lines.takeLast(12).map { it.raw })) {
+            languageWarned = true
+            val message = "Subtitrările nu sunt în română. În Zoom/Meet: Subtitrări (CC) → Limbă → Română."
+            _state.update { it.copy(health = message) }
+            alerts.fire(AlertLevel.HEALTH, "Subtitrările nu sunt în română", message)
+        }
         if (prefs.diagnostics) DiagLog.log("LINE flags=$flags speaker=$speaker :: $text")
 
         main.launch(dbThread) {

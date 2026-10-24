@@ -38,6 +38,13 @@ class DetectorTest {
     }
 
     @Test
+    fun detectsEnglishCaptions() {
+        assertTrue(Detector.looksEnglish(listOf("So we will talk about the budget and what you can do for this project")))
+        assertFalse(Detector.looksEnglish(listOf("Bună ziua, acum vorbim despre buget și ce trebuie să facem pentru proiect")))
+        assertFalse(Detector.looksEnglish(listOf("Avem meeting la ora trei, e ok pentru tine?")))
+    }
+
+    @Test
     fun topics() {
         assertEquals("buget", detector.analyze("Bugetul pe trimestrul trei e depășit").topic)
         assertEquals("raport lunar", detector.analyze("Despre raportul lunar vorbim mâine").topic)
