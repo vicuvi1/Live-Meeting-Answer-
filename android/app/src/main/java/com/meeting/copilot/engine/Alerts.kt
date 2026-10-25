@@ -6,9 +6,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.RingtoneManager
 import android.os.Build
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -31,7 +34,9 @@ enum class AlertLevel { NONE, TOPIC, MENTION, DIRECT, HEALTH }
 class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpeech.OnInitListener {
 
     companion object {
-        const val CHANNEL_DIRECT = "direct_question"
+        /** v2: the first version had no sound; Android doesn't let an existing channel gain one. */
+        const val CHANNEL_DIRECT = "direct_question_v2"
+        private const val OLD_CHANNEL_DIRECT = "direct_question"
         private const val CHANNEL_SOFT = "mentions_topics"
         private const val CHANNEL_INFO = "meeting_info"
         private const val ID_ALERT = 10
@@ -54,8 +59,10 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
 
     fun fire(level: AlertLevel, title: String, text: String) {
         if (level == AlertLevel.NONE) return
-        if (prefs.vibrate) vibrate(level)
-        notify(level, title, text)
+        val posted = notify(level, title, text)
+        // A question's notification beeps and vibrates by itself (following ring/silent mode);
+        // the app vibrates only for the softer alerts, or when notifications are blocked.
+        if (prefs.vibrate && (level != AlertLevel.DIRECT || !posted)) vibrate(level)
         if (level == AlertLevel.DIRECT && prefs.whisperQuestion) speakIfHeadset(text)
     }
 
@@ -72,21 +79,33 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+            val effect = VibrationEffect.createWaveform(pattern, -1)
+            // Marked as a notification vibration: Android may drop unmarked ones from background apps.
+            if (Build.VERSION.SDK_INT >= 33) {
+                vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_NOTIFICATION))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).build())
+            }
         } catch (_: Exception) {
         }
     }
 
-    private fun notify(level: AlertLevel, title: String, text: String) {
+    /** True when the notification could be shown. */
+    private fun notify(level: AlertLevel, title: String, text: String): Boolean {
         val channel = if (level == AlertLevel.DIRECT) CHANNEL_DIRECT else CHANNEL_SOFT
         val priority = if (level == AlertLevel.DIRECT) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT
-        post(ID_ALERT, channel, title, text, priority)
+        return post(ID_ALERT, channel, title, text, priority)
     }
 
-    private fun post(id: Int, channel: String, title: String, text: String, priority: Int) {
+    private fun post(id: Int, channel: String, title: String, text: String, priority: Int): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return false
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (!manager.areNotificationsEnabled() || manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            return false
+        }
         val open = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
@@ -103,19 +122,29 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
             .setAutoCancel(true)
             .setSilent(channel != CHANNEL_DIRECT)
             .build()
-        try {
+        return try {
             NotificationManagerCompat.from(context).notify(id, notification)
+            true
         } catch (_: SecurityException) {
+            false
         }
     }
 
     private fun createChannels() {
         val manager = context.getSystemService(NotificationManager::class.java)
+        manager.deleteNotificationChannel(OLD_CHANNEL_DIRECT)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_DIRECT, "Întrebări pentru tine", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Când cineva te întreabă ceva în ședință"
-                enableVibration(false) // the app vibrates with its own pattern
-                setSound(null, null)
+                description = "Când cineva te întreabă ceva în ședință: sunet scurt și vibrație (după modul sonerie/silențios)"
+                enableVibration(true)
+                vibrationPattern = PATTERNS[AlertLevel.DIRECT]
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
             }
         )
         manager.createNotificationChannel(

@@ -115,6 +115,11 @@ class MeetingEngine(
     private val _openPanel = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val openPanel: SharedFlow<Unit> = _openPanel
 
+    /** Emits when the captions come in another language, so the service switches them to Romanian. */
+    private val _fixLanguage = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val fixLanguage: SharedFlow<Unit> = _fixLanguage
+    private var languageFixAt = 0L
+
     val assembler = CaptionAssembler(this)
 
     private var detector = Detector(emptyList(), emptyList())
@@ -198,6 +203,10 @@ class MeetingEngine(
 
     /** The service pressed a captions control by itself; show it so she knows what happened. */
     fun onAutoCaptions(action: String) {
+        if (action.startsWith("selected Romanian")) {
+            _state.update { it.copy(health = null) } // the "captions are in English" warning is solved
+            return
+        }
         if (sessionActive) return
         _state.update { it.copy(health = "Pornesc subtitrările în română automat…") }
     }
@@ -260,7 +269,7 @@ class MeetingEngine(
                 val json = llm.json(
                     Prompts.answerSystem(prefs.displayName()),
                     Prompts.answerUser(profile(), catchUp, recent, target.toPrompt()),
-                    maxTokens = 700,
+                    maxTokens = 1_500,
                     timeoutMs = 20_000,
                 )
                 val answer = Prompts.parseAnswer(json, target.text, now())
@@ -331,7 +340,7 @@ class MeetingEngine(
             val json = llm.json(
                 Prompts.summarySystem(prefs.displayName()),
                 Prompts.summaryUser(profile(), lines),
-                maxTokens = 3000,
+                maxTokens = 4_000,
                 timeoutMs = 60_000,
             )
             val summary = Prompts.parseSummary(json)
@@ -361,6 +370,7 @@ class MeetingEngine(
         lastDigestAt = now
         noCaptionsWarned = false
         languageWarned = false
+        languageFixAt = 0L
         pendingMentionAt = 0L
         lastTopicAlert.clear()
         lines.clear()
@@ -404,11 +414,15 @@ class MeetingEngine(
         val line = Line(nextLocalId++, ts, speaker, text, flags = flags)
         lines.add(line)
         _state.update { it.copy(lines = lines.takeLast(40)) }
-        if (!languageWarned && lines.size % 4 == 0 && Detector.looksEnglish(lines.takeLast(12).map { it.raw })) {
-            languageWarned = true
-            val message = "Subtitrările nu sunt în română. În Zoom/Meet: Subtitrări (CC) → Limbă → Română."
-            _state.update { it.copy(health = message) }
-            alerts.fire(AlertLevel.HEALTH, "Subtitrările nu sunt în română", message)
+        if (lines.size % 4 == 0 && now - languageFixAt > 60_000 && Detector.looksEnglish(lines.takeLast(12).map { it.raw })) {
+            languageFixAt = now
+            _fixLanguage.tryEmit(Unit) // the service switches Meet/Zoom captions to Romanian
+            if (!languageWarned) {
+                languageWarned = true
+                val message = "Subtitrările sunt în engleză. Le trec pe română; dacă nu reușesc: Subtitrări (CC) → Limbă → Română."
+                _state.update { it.copy(health = message) }
+                alerts.fire(AlertLevel.HEALTH, "Subtitrările nu sunt în română", message)
+            }
         }
         if (prefs.diagnostics) DiagLog.log("LINE flags=$flags speaker=$speaker :: $text")
 
@@ -443,7 +457,7 @@ class MeetingEngine(
                 val json = llm.json(
                     Prompts.digestSystem(prefs.displayName()),
                     Prompts.digestUser(profile(), previous, context, fresh.map { it.toPrompt() }),
-                    maxTokens = 3500,
+                    maxTokens = 5_000,
                     timeoutMs = 30_000,
                 )
                 val (cleaned, catchUp) = Prompts.parseDigest(json, fresh.size, now())

@@ -30,17 +30,40 @@ class CaptionAssembler(
 
     private class Stats {
         var lastText = ""
-        val changes = ArrayDeque<Long>()
+        /** Times the text grew (words added, or old words scrolled away) rather than being replaced. */
+        val growths = ArrayDeque<Long>()
     }
 
     companion object {
         const val QUALIFY_WINDOW_MS = 20_000L
-        const val QUALIFY_CHANGES = 3
+        const val QUALIFY_GROWTHS = 2
         const val IDLE_COMMIT_MS = 2_500L
-        const val SWITCH_IDLE_MS = 20_000L
+        /** A locked source that stopped growing this long gives way to one that grows. */
+        const val SWITCH_NO_GROWTH_MS = 12_000L
         const val MAX_WORDS = 220
         const val MAX_UTTERANCE_WORDS = 45
         private val SENTENCE_END = Regex("[.?!…]$")
+
+        /** Text of meeting-app menus and settings, never captions (Meet's options sheet, etc.). */
+        private val MENU_PHRASES = listOf(
+            "show captions in this call", "studio sound", "filters out background noise", "reactions move on the screen",
+            "watch only presentations", "your own reactions", "caption language", "captions in this call",
+            "afiseaza subtitrarile", "sunet de studio", "limba subtitrarilor", "subtitrari in acest apel",
+        )
+
+        fun looksLikeMenu(text: String): Boolean {
+            val normalized = TextNorm.norm(text)
+            return MENU_PHRASES.any { normalized.contains(it) }
+        }
+
+        /** Captions progress: the new text continues the old one with more words, or old lines scrolled away. */
+        fun isGrowth(old: String, new: String): Boolean {
+            val before = TextNorm.words(old).takeLast(MAX_WORDS)
+            val after = TextNorm.words(new).takeLast(MAX_WORDS)
+            if (before.isEmpty() || after.isEmpty()) return false
+            val offset = align(before, after)
+            return offset > 0 || (offset == 0 && after.size > before.size)
+        }
     }
 
     private val stats = HashMap<String, Stats>()
@@ -48,6 +71,7 @@ class CaptionAssembler(
         private set
     var lastActiveChange = 0L
         private set
+    private var lastActiveGrowth = 0L
 
     private var tail: List<String> = emptyList()
     private var committedInTail = 0
@@ -60,12 +84,14 @@ class CaptionAssembler(
         for (region in regions) {
             val s = stats.getOrPut(region.key) { Stats() }
             if (s.lastText == region.text) continue
+            val grew = isGrowth(s.lastText, region.text)
             s.lastText = region.text
-            s.changes.addLast(now)
-            while (s.changes.isNotEmpty() && now - s.changes.first() > QUALIFY_WINDOW_MS) s.changes.removeFirst()
+            if (grew) s.growths.addLast(now)
+            while (s.growths.isNotEmpty() && now - s.growths.first() > QUALIFY_WINDOW_MS) s.growths.removeFirst()
 
             if (region.key == activeKey) {
                 lastActiveChange = now
+                if (grew) lastActiveGrowth = now
                 onActiveText(region.text, region.speaker, now)
             } else if (canSwitchTo(region, s, now)) {
                 switchTo(region, now)
@@ -91,6 +117,7 @@ class CaptionAssembler(
         flushAll(clock())
         stats.clear()
         activeKey = null
+        lastActiveGrowth = 0L
         tail = emptyList()
         committedInTail = 0
         speaker = null
@@ -98,10 +125,10 @@ class CaptionAssembler(
     }
 
     private fun canSwitchTo(region: Region, s: Stats, now: Long): Boolean {
-        val qualifies = region.explicit ||
-            (s.changes.size >= QUALIFY_CHANGES && TextNorm.words(region.text).size >= 3)
+        if (looksLikeMenu(region.text)) return false
+        val qualifies = region.explicit || s.growths.size >= QUALIFY_GROWTHS
         if (!qualifies) return false
-        return activeKey == null || now - lastActiveChange > SWITCH_IDLE_MS
+        return activeKey == null || now - lastActiveGrowth > SWITCH_NO_GROWTH_MS
     }
 
     private fun switchTo(region: Region, now: Long) {
@@ -110,6 +137,7 @@ class CaptionAssembler(
         tail = emptyList()
         committedInTail = 0
         lastActiveChange = now
+        lastActiveGrowth = now
         listener.onSourceLocked(region.key)
         onActiveText(region.text, region.speaker, now)
     }
@@ -129,22 +157,35 @@ class CaptionAssembler(
         }
 
         val offset = align(tail, words)
+        val stillVisible: List<String>
         if (offset < 0) {
             // Completely new text: whatever was visible before is final, and a new caption block starts.
             commitWords(tail.subList(committedInTail, tail.size), now)
             flushPending()
             committedInTail = 0
-        } else if (offset > 0) {
-            // The first `offset` words scrolled out of view.
-            if (offset > committedInTail) commitWords(tail.subList(committedInTail, offset), now)
-            committedInTail = maxOf(0, committedInTail - offset)
+            stillVisible = emptyList()
+        } else {
+            if (offset > 0) {
+                // The first `offset` words scrolled out of view.
+                if (offset > committedInTail) commitWords(tail.subList(committedInTail, offset), now)
+                committedInTail = maxOf(0, committedInTail - offset)
+            }
+            stillVisible = tail.subList(offset, tail.size)
         }
         // Words finalized above were said by the previous speaker; switch only now.
         if (speakerChanged) flushPending()
         if (newSpeaker != null) speaker = newSpeaker
+        // Already-final words stay final only while they are still on screen unchanged; after fixed
+        // text (a title, a name) a new sentence replaces the old one, and its words are new.
+        committedInTail = minOf(committedInTail, sameLeading(stillVisible, words))
         tail = words
-        committedInTail = minOf(committedInTail, tail.size)
         emitLive()
+    }
+
+    private fun sameLeading(before: List<String>, after: List<String>): Int {
+        var i = 0
+        while (i < before.size && i < after.size && TextNorm.key(before[i]) == TextNorm.key(after[i])) i++
+        return i
     }
 
     private fun commitWords(words: List<String>, now: Long) {

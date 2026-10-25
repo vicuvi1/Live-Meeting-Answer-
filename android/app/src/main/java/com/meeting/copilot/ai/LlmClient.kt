@@ -150,18 +150,29 @@ class LlmClient(private val prefs: Prefs) {
                     .put(JSONObject().put("role", "system").put("content", system))
                     .put(JSONObject().put("role", "user").put("content", user))
             )
-        val response = post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            mapOf(
-                "Authorization" to "Bearer ${prefs.openRouterKey.trim()}",
-                "X-Title" to "Asistent Sedinte",
-            ),
-            body,
-            timeoutMs,
-        )
+        // Strict JSON mode keeps replies parseable; a model that doesn't support it is remembered.
+        val jsonMode = model !in noJsonMode
+        if (jsonMode) body.put("response_format", JSONObject().put("type", "json_object"))
+        val response = try {
+            post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                mapOf(
+                    "Authorization" to "Bearer ${prefs.openRouterKey.trim()}",
+                    "X-Title" to "Asistent Sedinte",
+                ),
+                body,
+                timeoutMs,
+            )
+        } catch (e: LlmException) {
+            if (!jsonMode || e.message?.contains("response_format", ignoreCase = true) != true) throw e
+            noJsonMode.add(model)
+            return openRouter(system, user, maxTokens, timeoutMs)
+        }
         return response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
             ?: throw LlmException("OpenRouter nu a returnat niciun răspuns.")
     }
+
+    private val noJsonMode = java.util.Collections.synchronizedSet(HashSet<String>())
 
     private fun post(url: String, headers: Map<String, String>, body: JSONObject, timeoutMs: Int): JSONObject {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -256,13 +267,52 @@ class LlmClient(private val prefs: Prefs) {
         /** Accepts plain JSON, JSON inside ``` fences, or JSON with text around it. */
         fun parseJson(text: String): JSONObject {
             val start = text.indexOf('{')
+            if (start < 0) throw LlmException("Răspunsul AI nu a avut formatul așteptat. Încearcă din nou.")
             val end = text.lastIndexOf('}')
-            if (start < 0 || end <= start) throw LlmException("Răspuns AI fără JSON: ${text.take(120)}")
-            return try {
-                JSONObject(text.substring(start, end + 1))
-            } catch (e: Exception) {
-                throw LlmException("Răspuns AI invalid: ${e.message}")
+            if (end > start) {
+                try {
+                    return JSONObject(text.substring(start, end + 1))
+                } catch (_: Exception) {
+                }
             }
+            // The reply was cut off (length limit): close what's open so the fields so far aren't lost.
+            return try {
+                JSONObject(repairTruncatedJson(text.substring(start)))
+            } catch (_: Exception) {
+                throw LlmException("Răspunsul AI nu a avut formatul așteptat. Încearcă din nou.")
+            }
+        }
+
+        /** Closes an unfinished string, drops a dangling key or comma, and closes open arrays/objects. */
+        fun repairTruncatedJson(text: String): String {
+            val out = StringBuilder()
+            val stack = ArrayDeque<Char>()
+            var inString = false
+            var escaped = false
+            for (c in text) {
+                out.append(c)
+                if (inString) {
+                    when {
+                        escaped -> escaped = false
+                        c == '\\' -> escaped = true
+                        c == '"' -> inString = false
+                    }
+                    continue
+                }
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> stack.addLast('}')
+                    '[' -> stack.addLast(']')
+                    '}', ']' -> if (stack.isNotEmpty()) stack.removeLast()
+                }
+            }
+            if (escaped) out.setLength(out.length - 1)
+            if (inString) out.append('"')
+            var repaired = out.toString().trimEnd()
+            // A key without a value ("answer":) or a trailing comma would still be invalid.
+            repaired = repaired.replace(Regex(",\\s*\"[^\"]*\"\\s*:?\\s*$"), "").trimEnd().removeSuffix(",")
+            if (repaired.endsWith(":")) repaired += "null"
+            return repaired + stack.reversed().joinToString("")
         }
     }
 }
