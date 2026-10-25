@@ -105,7 +105,7 @@ Reguli:
 - Folosește DOAR fapte din notițele ei sau din discuție. NU inventa cifre, date, statusuri sau promisiuni.
 - Dacă îți lipsesc faptele, pune "confident": false și dă un răspuns sigur, care nu promite nimic concret (că verifică și revine), legat de subiectul întrebării.
 Răspunde DOAR cu JSON, exact în forma:
-{"question":"ce a fost întrebată, max 15 cuvinte","context":["max 2 lucruri spuse înainte care contează pentru răspuns"],"answer":"ce să spună","confident":true}
+{"question":"ce a fost întrebată, max 15 cuvinte","context":["max 2 lucruri spuse înainte care contează, max 12 cuvinte fiecare"],"answer":"ce să spună","confident":true}
 """.trim()
 
     fun answerUser(profile: Profile, catchUp: CatchUp?, recent: List<PromptLine>, trigger: PromptLine) = buildString {

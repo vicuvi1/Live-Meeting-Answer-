@@ -35,19 +35,30 @@ class AutoCaptions {
             "afiseaza subtitrarile", "afisati subtitrarile", "subtitrari live",
         )
         private val MORE = setOf("more options", "more", "mai multe optiuni", "mai multe", "alte optiuni", "optiuni suplimentare")
-        private val ROMANIAN = setOf("romana", "romanian", "romana romania", "romanian romania", "romana (romania)")
+        private val ROMANIAN = setOf("romana", "romanian", "romana romania", "romanian romania", "romana (romania)", "romanian (romania)")
+        /** The row showing the captions' language, e.g. Meet's "Show captions in this call  English (United Kingdom)". */
+        private val LANGUAGE_ROW = listOf(
+            "captions in this call", "caption language", "spoken language", "meeting language",
+            "subtitrari in acest apel", "limba subtitrarilor", "limba vorbita", "limba sedintei",
+        )
+        private const val MAX_LANGUAGE_ATTEMPTS = 8
 
-        /** Controls only present in an active call: lets Gmail count as a meeting only during a Meet call. */
+        private fun isRomanianOption(label: String) =
+            label in ROMANIAN || label.startsWith("romanian") || label.startsWith("romana")
+
+        /** Controls only present during a call (not on a meeting app's home screen or Gmail's inbox). */
         private val CALL_MARKERS = listOf(
             "leave call", "end call", "hang up", "parasiti apelul", "paraseste apelul", "inchide apelul",
             "incheie apelul", "terminati apelul", "iesi din apel", "parasiti intalnirea", "leave meeting",
+            "microphone", "microfon", "turn on captions", "turn off captions", "subtitrari", "camera off", "turn off camera",
         )
+        private val CALL_EXACT = setOf("leave", "end", "parasiti", "iesi", "mute", "unmute")
 
         fun label(node: AccessibilityNodeInfo): String =
             TextNorm.norm((node.contentDescription ?: node.text ?: "").toString()).trim().trimEnd('.', '…')
 
         fun hasCallControls(root: AccessibilityNodeInfo): Boolean =
-            find(listOf(root)) { node -> label(node).let { l -> CALL_MARKERS.any { l.contains(it) } } } != null
+            find(listOf(root)) { node -> label(node).let { l -> l in CALL_EXACT || CALL_MARKERS.any { l.contains(it) } } } != null
 
         /** Breadth-first search over visible nodes, bounded so it stays cheap. */
         fun find(roots: List<AccessibilityNodeInfo>, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
@@ -70,6 +81,29 @@ class AutoCaptions {
     private var menuOpenedAt = 0L
     private var captionsClickedAt = 0L
     private var languagePicked = false
+    private var fixLanguageUntil = 0L
+    private var languageAttempts = 0
+    private var languageLastAt = 0L
+    private var closeMenuAt = 0L
+
+    /** The captions came in another language: switch them to Romanian over the next minute. */
+    fun requestRomanian(now: Long) {
+        if (now < fixLanguageUntil) return
+        fixLanguageUntil = now + 60_000
+        languageAttempts = 0
+        languagePicked = false
+        log("captions are not Romanian: switching the language")
+    }
+
+    /**
+     * True once, shortly after it changed a setting through a menu, if that menu still covers the
+     * call. The caller then presses Back, which closes the menu, not the call.
+     */
+    fun shouldCloseMenu(roots: List<AccessibilityNodeInfo>, now: Long): Boolean {
+        if (closeMenuAt == 0L || now < closeMenuAt) return false
+        closeMenuAt = 0L
+        return find(roots) { node -> label(node).let { CaptionAssembler.looksLikeMenu(it) || isRomanianOption(it) } } != null
+    }
 
     /**
      * Called on every scan. [captionsFlowing] = caption text arrived recently.
@@ -86,14 +120,13 @@ class AutoCaptions {
         if (visibleSince == 0L) visibleSince = now
         if (!enabled || roots.isEmpty()) return null
 
-        // A language list right after we turned captions on: choose Romanian.
-        if (!languagePicked && now - captionsClickedAt < LANGUAGE_WINDOW_MS) {
-            find(roots) { label(it) in ROMANIAN }?.let { node ->
-                if (click(node)) {
-                    languagePicked = true
-                    return log("selected Romanian (${label(node)})")
-                }
-            }
+        // Captions in the wrong language: open the caption settings and pick Romanian.
+        if (now < fixLanguageUntil && languageAttempts < MAX_LANGUAGE_ATTEMPTS && now - languageLastAt > RETRY_MS) {
+            fixLanguage(roots, now, mayOpenMenus = true)?.let { return it }
+        }
+        // Right after we turned captions on: if a language choice is on screen, choose Romanian.
+        if (!languagePicked && now - captionsClickedAt < LANGUAGE_WINDOW_MS && now - languageLastAt > RETRY_MS) {
+            fixLanguage(roots, now, mayOpenMenus = false)?.let { return it }
         }
 
         if (captionsFlowing) captionsSeen = true
@@ -127,6 +160,40 @@ class AutoCaptions {
         lastAttemptAt = now
         attempts++
         if (attempts == MAX_ATTEMPTS) log("could not find a captions button")
+        return null
+    }
+
+    /**
+     * One step towards Romanian captions: pick Romanian if offered, else open the language row,
+     * else (when allowed) open the captions settings or the "more options" menu.
+     */
+    private fun fixLanguage(roots: List<AccessibilityNodeInfo>, now: Long, mayOpenMenus: Boolean): String? {
+        find(roots) { isRomanianOption(label(it)) }?.let { node ->
+            if (click(node)) {
+                languageLastAt = now
+                languagePicked = true
+                fixLanguageUntil = 0L
+                closeMenuAt = now + 1_500
+                return log("selected Romanian (${label(node)})")
+            }
+        }
+        find(roots) { node -> label(node).let { l -> LANGUAGE_ROW.any { l.contains(it) } && !l.contains("roman") } }?.let { row ->
+            if (click(row)) {
+                languageLastAt = now
+                languageAttempts++
+                return log("opened caption language '${label(row).take(60)}'")
+            }
+        }
+        if (!mayOpenMenus) return null
+        languageLastAt = now
+        languageAttempts++
+        find(roots) { label(it) in MENU_ITEM }?.let { item ->
+            if (click(item)) return log("opened captions settings '${label(item)}'")
+        }
+        find(roots) { node -> label(node) in MORE && (node.isClickable || node.parent?.isClickable == true) }?.let { more ->
+            if (click(more)) return log("opened menu for the language '${label(more)}'")
+        }
+        if (languageAttempts >= MAX_LANGUAGE_ATTEMPTS) log("could not switch captions to Romanian")
         return null
     }
 

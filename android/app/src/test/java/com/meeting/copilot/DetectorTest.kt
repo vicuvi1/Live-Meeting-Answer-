@@ -84,6 +84,24 @@ class DetectorTest {
     }
 
     @Test
+    fun repairsAReplyCutOffMidSentence() {
+        // The exact cut-off reply from the real Meet test.
+        val cut = "{\"question\":\"Victor întreabă cum stă Olivia cu crema pentru acasă\",\"context\":[\"Subtitrările sunt acum disponibile în mai"
+        val json = LlmClient.parseJson(cut)
+        assertEquals("Victor întreabă cum stă Olivia cu crema pentru acasă", json.getString("question"))
+        val answer = Prompts.parseAnswer(json, "trigger", 1)
+        assertEquals(Prompts.SAFE_LINE, answer.answer) // no answer yet: safe line instead of an error
+    }
+
+    @Test
+    fun keepsAPartialAnswer() {
+        val json = LlmClient.parseJson("{\"question\":\"Când e gata?\",\"answer\":\"Raportul e gata vineri")
+        assertEquals("Raportul e gata vineri", json.getString("answer"))
+        assertEquals(1, LlmClient.parseJson("{\"a\":1,\"answer\"").length())
+        assertTrue(LlmClient.parseJson("{\"answer\":").isNull("answer"))
+    }
+
+    @Test
     fun readsRetryDelayFromQuotaErrors() {
         assertEquals((13 * 3600 + 38 * 60 + 11) * 1000L + 23, LlmClient.retryDelayMs("Please retry in 13h38m11.023975365s."))
         assertEquals(20_000L, LlmClient.retryDelayMs("Quota exceeded. Please retry in 20s."))

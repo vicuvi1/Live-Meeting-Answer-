@@ -119,6 +119,53 @@ class CaptionAssemblerTest {
     }
 
     @Test
+    fun newSentenceAfterFixedTextKeepsItsFirstWords() {
+        // Seen on the emulator: a fixed title in the same element made the next sentence lose "Am vorbit".
+        show("Titlu fix Bună")
+        show("Titlu fix Bună ziua")
+        show("Titlu fix Bună ziua tuturor.")
+        pause()
+        show("Titlu fix Am")
+        show("Titlu fix Am vorbit")
+        show("Titlu fix Am vorbit ieri.")
+        pause()
+        assertEquals("Am vorbit ieri.", utterances.last().second)
+    }
+
+    @Test
+    fun meetSettingsMenuNeverBecomesTheSource() {
+        // What real Meet showed: the options sheet changing as captions were turned on.
+        val menu = listOf(
+            "Filters out background noise and improves audio quality Watch only presentations",
+            "Filters out background noise and improves audio quality Watch only presentations Show captions in this call English (United Kingdom)",
+            "Filters out background noise and improves audio quality Watch only presentations Show captions in this call Romanian When off, your own reactions still appear",
+            "Filters out background noise and improves audio quality Watch only presentations Show captions in this call Romanian When off, your own reactions still appear Reactions move on the screen",
+        )
+        menu.forEach { show(it, key = "meet|TextView@9", explicit = false) }
+        assertNull(locked)
+    }
+
+    @Test
+    fun textThatIsOnlyReplacedIsNotCaptions() {
+        listOf("Ana vorbește acum", "Radu vorbește acum", "Maria vorbește acum", "Ion vorbește acum")
+            .forEach { show(it, key = "meet|speaker_banner", explicit = false) }
+        assertNull(locked)
+    }
+
+    @Test
+    fun switchesFromAStalledSourceToGrowingCaptions() {
+        show("Unu doi trei", key = "a", explicit = false)
+        show("Unu doi trei patru", key = "a", explicit = false)
+        show("Unu doi trei patru cinci", key = "a", explicit = false)
+        assertEquals("a", locked)
+        now += CaptionAssembler.SWITCH_NO_GROWTH_MS + 1_000 // "a" stops growing
+        show("Bună ziua", key = "b", explicit = false)
+        show("Bună ziua tuturor", key = "b", explicit = false)
+        show("Bună ziua tuturor de aici", key = "b", explicit = false)
+        assertEquals("b", locked)
+    }
+
+    @Test
     fun alignHandlesGrowingLastWord() {
         assertEquals(0, align(listOf("Bună", "ziu"), listOf("Bună", "ziua", "tuturor")))
         assertEquals(2, align(listOf("a", "b", "c", "d"), listOf("c", "d", "e")))
