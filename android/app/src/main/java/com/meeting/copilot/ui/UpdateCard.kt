@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.media.AudioManager
 import com.meeting.copilot.util.UpdateChecker
 import kotlinx.coroutines.launch
 import java.io.File
@@ -42,6 +43,12 @@ fun UpdateCard(update: UpdateChecker.Update, resumes: Int) {
     var error by remember { mutableStateOf<String?>(null) }
 
     fun installNow(apk: File) {
+        // Android 16 blocks installing during a call ("Nu se poate finaliza acțiunea în timpul apelului").
+        val audio = context.getSystemService(AudioManager::class.java)
+        if (audio != null && (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION)) {
+            error = "Ești într-un apel. Android nu permite actualizarea în timpul apelului: închide apelul, apoi apasă Instalează."
+            return
+        }
         if (!UpdateChecker.canInstall(context)) {
             needsPermission = true
             UpdateChecker.openInstallPermission(context)
