@@ -29,7 +29,7 @@ class LlmClient(private val prefs: Prefs) {
      * is filled in too, it uses that one instead; an exhausted provider isn't asked again until
      * its limit resets, so the app doesn't fail every 90 seconds.
      */
-    suspend fun json(system: String, user: String, maxTokens: Int, timeoutMs: Int = 25_000): JSONObject =
+    suspend fun json(system: String, user: String, maxTokens: Int, timeoutMs: Int = 25_000, imageJpeg: String? = null): JSONObject =
         withContext(Dispatchers.IO) {
             if (!isConfigured()) throw LlmException("Lipsește cheia AI (Setări → AI).")
             var lastError: String? = null
@@ -39,7 +39,7 @@ class LlmClient(private val prefs: Prefs) {
                     continue
                 }
                 try {
-                    return@withContext call(provider, system, user, maxTokens, timeoutMs)
+                    return@withContext call(provider, system, user, maxTokens, timeoutMs, imageJpeg)
                 } catch (e: QuotaException) {
                     blockedUntil[provider] = System.currentTimeMillis() + e.waitMs
                     blockedReason[provider] = e.message.orEmpty()
@@ -57,17 +57,22 @@ class LlmClient(private val prefs: Prefs) {
         return if (backupKey.isNotBlank()) listOf(primary, backup) else listOf(primary)
     }
 
-    private suspend fun call(provider: String, system: String, user: String, maxTokens: Int, timeoutMs: Int): JSONObject {
+    private suspend fun call(provider: String, system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): JSONObject {
+        var image = imageJpeg
         var attempt = 0
         var switchedModel = false
         while (true) {
             try {
                 val text = if (provider == Prefs.PROVIDER_OPENROUTER) {
-                    openRouter(system, user, maxTokens, timeoutMs)
+                    openRouter(system, user, maxTokens, timeoutMs, image)
                 } else {
-                    gemini(system, user, maxTokens, timeoutMs)
+                    gemini(system, user, maxTokens, timeoutMs, image)
                 }
                 return parseJson(text)
+            } catch (e: LlmException) {
+                // A model that can't take images still answers from the words alone.
+                if (image == null || e.message?.startsWith("Cerere respinsă") != true) throw e
+                image = null
             } catch (e: RetryableException) {
                 if (attempt++ >= 1) throw LlmException(e.message ?: "Serviciul AI e ocupat.")
                 delay(1_500)
@@ -104,7 +109,7 @@ class LlmClient(private val prefs: Prefs) {
         null
     }
 
-    private fun gemini(system: String, user: String, maxTokens: Int, timeoutMs: Int): String {
+    private fun gemini(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): String {
         val model = prefs.geminiModel.trim().ifEmpty { "gemini-3.8-flash" }
         val generation = JSONObject()
             .put("temperature", 0.3)
@@ -117,7 +122,12 @@ class LlmClient(private val prefs: Prefs) {
             .put(
                 "contents",
                 JSONArray().put(
-                    JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", user)))
+                    JSONObject().put("role", "user").put("parts", JSONArray().apply {
+                        put(JSONObject().put("text", user))
+                        if (imageJpeg != null) {
+                            put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", imageJpeg)))
+                        }
+                    })
                 )
             )
             .put("generationConfig", generation)
@@ -138,8 +148,11 @@ class LlmClient(private val prefs: Prefs) {
         }
     }
 
-    private fun openRouter(system: String, user: String, maxTokens: Int, timeoutMs: Int): String {
+    private fun openRouter(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): String {
         val model = prefs.openRouterModel.trim().ifEmpty { "anthropic/claude-haiku-5.5" }
+        val userContent: Any = if (imageJpeg == null) user else JSONArray()
+            .put(JSONObject().put("type", "text").put("text", user))
+            .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$imageJpeg")))
         val body = JSONObject()
             .put("model", model)
             .put("temperature", 0.3)
@@ -148,7 +161,7 @@ class LlmClient(private val prefs: Prefs) {
                 "messages",
                 JSONArray()
                     .put(JSONObject().put("role", "system").put("content", system))
-                    .put(JSONObject().put("role", "user").put("content", user))
+                    .put(JSONObject().put("role", "user").put("content", userContent))
             )
         // Strict JSON mode keeps replies parseable; a model that doesn't support it is remembered.
         val jsonMode = model !in noJsonMode
@@ -166,7 +179,7 @@ class LlmClient(private val prefs: Prefs) {
         } catch (e: LlmException) {
             if (!jsonMode || e.message?.contains("response_format", ignoreCase = true) != true) throw e
             noJsonMode.add(model)
-            return openRouter(system, user, maxTokens, timeoutMs)
+            return openRouter(system, user, maxTokens, timeoutMs, imageJpeg)
         }
         return response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
             ?: throw LlmException("OpenRouter nu a returnat niciun răspuns.")

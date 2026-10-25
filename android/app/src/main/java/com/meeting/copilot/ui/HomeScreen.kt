@@ -247,7 +247,7 @@ private fun SetupCard(
 private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
     when (state.status) {
         Status.LISTENING -> {
-            val alertRecent = now - state.alertAt < 60_000 && (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC)
+            val alertRecent = now - state.alertAt < 60_000 && (state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC || state.alert == AlertLevel.QUESTION)
             val tone = when {
                 !state.meetingVisible || state.health != null -> Tone.Warning
                 alertRecent -> Tone.Warning
@@ -280,7 +280,11 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
                         Icon(Icons.Filled.Notifications, null, tint = Palette.Amber, modifier = Modifier.size(18.dp).padding(top = 2.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            (if (state.alert == AlertLevel.MENTION) "Ai fost menționată: " else "Subiect urmărit: ") + state.alertText,
+                            when (state.alert) {
+                                AlertLevel.MENTION -> "Ai fost menționată: "
+                                AlertLevel.QUESTION -> "Întrebare: "
+                                else -> "Subiect urmărit: "
+                            } + state.alertText,
                             style = MaterialTheme.typography.bodyMedium, color = Palette.TextSoft,
                         )
                     }

@@ -24,7 +24,7 @@ import com.meeting.copilot.data.Prefs
 import com.meeting.copilot.ui.MainActivity
 import java.util.Locale
 
-enum class AlertLevel { NONE, TOPIC, MENTION, DIRECT, HEALTH }
+enum class AlertLevel { NONE, TOPIC, MENTION, QUESTION, DIRECT, HEALTH }
 
 /**
  * Gets her attention without her looking at the phone: distinct vibration per level and a
@@ -45,6 +45,7 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
         private val PATTERNS = mapOf(
             AlertLevel.DIRECT to longArrayOf(0, 450, 150, 450, 150, 700),
             AlertLevel.MENTION to longArrayOf(0, 250, 150, 250),
+            AlertLevel.QUESTION to longArrayOf(0, 200, 120, 200),
             AlertLevel.TOPIC to longArrayOf(0, 120),
             AlertLevel.HEALTH to longArrayOf(0, 100, 120, 100, 120, 100),
         )

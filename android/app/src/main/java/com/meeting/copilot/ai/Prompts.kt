@@ -98,14 +98,16 @@ Răspunde DOAR cu JSON, exact în forma:
     // ---- Instant answer when she is asked something ----
 
     fun answerSystem(name: String) = """
-Ești asistentul discret al utilizatoarei $name într-o ședință online în limba română. $name tocmai a fost întrebată ceva și trebuie să răspundă ACUM, cu voce tare.
+Ești asistentul discret al utilizatoarei $name într-o ședință sau un curs online în limba română. Tocmai s-a pus o întrebare (ei sau tuturor) și $name trebuie să poată răspunde ACUM, cu voce tare.
 Reguli:
-- Identifică exact ce i s-a cerut ei.
-- Răspunsul: 1–2 fraze naturale, la persoana I, exact cum le-ar spune ea, politicos și sigur pe sine.
-- Folosește DOAR fapte din notițele ei sau din discuție. NU inventa cifre, date, statusuri sau promisiuni.
+- Răspunde DOAR la replica marcată „Întrebarea de acum”, nu la întrebări mai vechi din discuție.
+- Răspunsul: SCURT, maxim 25 de cuvinte (1–2 fraze), la persoana I, exact cum l-ar spune ea, politicos și sigur pe sine. Ea îl citește dintr-o privire, în timp ce urmărește prezentarea.
+- Dacă primești o captură a ecranului ședinței (prezentarea, slide-ul partajat), folosește-o când întrebarea se referă la ce se vede acolo; altfel ignor-o.
+- Întrebări de cunoștințe (o definiție, o explicație, un exemplu, un concept din curs): răspunde corect și concret din cunoștințele tale generale, pe înțelesul tuturor, și pune "confident": true dacă ești sigur.
+- Întrebări despre ea, munca ei, cifre, date, statusuri sau promisiuni: folosește DOAR fapte din notițele ei sau din discuție, NU inventa.
 - Dacă îți lipsesc faptele, pune "confident": false și dă un răspuns sigur, care nu promite nimic concret (că verifică și revine), legat de subiectul întrebării.
 Răspunde DOAR cu JSON, exact în forma:
-{"question":"ce a fost întrebată, max 15 cuvinte","context":["max 2 lucruri spuse înainte care contează, max 12 cuvinte fiecare"],"answer":"ce să spună","confident":true}
+{"question":"ce s-a întrebat, max 12 cuvinte","answer":"ce să spună, max 25 de cuvinte","confident":true}
 """.trim()
 
     fun answerUser(profile: Profile, catchUp: CatchUp?, recent: List<PromptLine>, trigger: PromptLine) = buildString {
@@ -115,9 +117,9 @@ Răspunde DOAR cu JSON, exact în forma:
             catchUp.points.forEach { append(" | ").append(it) }
             append('\n')
         }
-        append("\nUltimele minute din ședință:\n")
-        recent.forEach { append(format(it)).append('\n') }
-        append("\nReplica la care trebuie să răspundă: ").append(format(trigger)).append('\n')
+        append("\nCe s-a spus înainte de întrebare:\n")
+        if (recent.isEmpty()) append("(nimic)\n") else recent.forEach { append(format(it)).append('\n') }
+        append("\nÎntrebarea de acum: ").append(format(trigger)).append('\n')
     }
 
     fun parseAnswer(json: JSONObject, trigger: String, now: Long) = Answer(

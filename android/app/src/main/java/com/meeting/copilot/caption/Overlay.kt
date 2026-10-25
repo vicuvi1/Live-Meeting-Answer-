@@ -195,7 +195,7 @@ class Overlay(
 
     private fun targetMode(state: UiState, now: Long): Mode {
         if (userExpanded) return Mode.EXPANDED
-        val peek = state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC
+        val peek = state.alert == AlertLevel.MENTION || state.alert == AlertLevel.TOPIC || state.alert == AlertLevel.QUESTION
         return if (peek && now - state.alertAt < ALERT_PEEK_MS) Mode.ALERT else Mode.COMPACT
     }
 
@@ -426,6 +426,7 @@ class Overlay(
         val (dotColor, label) = when {
             asked -> C.redStrong to "Întrebare"
             state.alert == AlertLevel.MENTION && age < 60_000 -> C.amber to "Menționată"
+            state.alert == AlertLevel.QUESTION && age < 60_000 -> C.blue to "Întrebare"
             state.status == Status.LISTENING && !state.meetingVisible -> C.amber to "Ascuns"
             state.status == Status.LISTENING && state.health != null -> C.amber to "Fără CC"
             state.status == Status.LISTENING -> null to elapsed(state.startedAt, now)
@@ -475,6 +476,7 @@ class Overlay(
         val (color, title) = when (state.alert) {
             AlertLevel.DIRECT -> C.redStrong to "${speaker ?: "Cineva"} te întreabă"
             AlertLevel.MENTION -> C.amber to "${speaker ?: "Cineva"} te-a menționat"
+            AlertLevel.QUESTION -> C.blue to "${speaker ?: "Cineva"} întreabă"
             AlertLevel.TOPIC -> C.blue to "Subiect urmărit"
             else -> C.amber to "Atenție"
         }
@@ -628,27 +630,28 @@ class Overlay(
 
         state.health?.let { content.addView(note("⚠  $it", C.amber).top(10)) }
 
-        // Answer
+        // Answer: kept small so the shared screen / presentation stays visible below it.
         val answer = state.answer
         if (answer != null && (now - answer.createdAt < 5 * 60_000 || state.answerLoading)) {
-            val card = card(C.redDeep, C.red)
-            card.addView(eyebrow("ÎNTREBARE PENTRU TINE", C.red))
-            card.addView(text(answer.question, 19f, C.text, bold = true).top(6))
-            answer.context.forEach { card.addView(text("·  $it", 14f, C.muted).top(4)) }
-
-            val say = card(C.greenDeep, C.green)
-            say.addView(eyebrow("SPUNE", C.green))
+            val card = card(C.greenDeep, C.green)
+            card.addView(text(answer.question, 13f, C.muted).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
             when {
                 answer.answer.isNotBlank() -> {
-                    say.addView(text(answer.answer, 23f, C.text, bold = true).top(6))
-                    if (!answer.confident) say.addView(text("Răspuns prudent: nu am date sigure despre asta.", 13f, C.muted).top(8))
+                    card.addView(text(answer.answer, 18f, C.text, bold = true).top(4))
+                    if (!answer.confident) card.addView(text("Răspuns prudent", 12f, C.muted).top(4))
                 }
-                state.answerLoading -> say.addView(text("Pregătesc răspunsul…", 18f, C.soft).top(6))
-                state.answerError != null -> say.addView(text(state.answerError, 15f, C.red).top(6))
+                state.answerLoading -> card.addView(text("Pregătesc răspunsul…", 16f, C.soft).top(4))
+                state.answerError != null -> card.addView(text(state.answerError, 14f, C.red).top(4))
             }
-            card.addView(say.top(14))
-            card.addView(button("Am răspuns", C.red, filled = false) { engine.dismissAnswer() }.top(12))
-            content.addView(card.top(14))
+            content.addView(card.top(8))
+            val buttons = row()
+            buttons.addView(button("Am răspuns", C.green, filled = false) { engine.dismissAnswer() }, weighted().apply { marginEnd = dp(6) })
+            buttons.addView(button("Ultima întrebare", C.blue, filled = false) { engine.requestAnswer() }, weighted().apply { marginStart = dp(6) })
+            content.addView(buttons.top(8))
+            return
         } else {
             state.answerError?.let { content.addView(note(it, C.red).top(10)) }
         }

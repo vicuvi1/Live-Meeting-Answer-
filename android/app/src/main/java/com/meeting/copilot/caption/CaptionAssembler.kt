@@ -112,6 +112,13 @@ class CaptionAssembler(
         }
     }
 
+    /** Finalizes what is on screen now without waiting for a pause ("Ce să răspund?" pressed). */
+    fun commitNow() {
+        if (activeKey == null) return
+        flushAll(clock())
+        emitLive()
+    }
+
     /** Finalizes everything (meeting ended) and forgets the source. */
     fun reset() {
         flushAll(clock())
