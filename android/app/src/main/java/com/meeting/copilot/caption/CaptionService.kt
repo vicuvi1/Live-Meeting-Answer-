@@ -1,9 +1,13 @@
 package com.meeting.copilot.caption
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -18,6 +22,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import kotlin.coroutines.resume
 
 /**
  * Reads the text Zoom / Meet / Live Caption draw on screen, groups it by screen element and
@@ -52,6 +60,8 @@ class CaptionService : AccessibilityService() {
         private const val STATIC_LINE_MS = 6_000L
         private const val MAX_NODES = 4_000
         private const val MAX_DEPTH = 60
+        /** Enough to read slide text, small enough to upload in a moment. */
+        private const val SCREENSHOT_MAX_SIDE = 1280f
 
         private val _connected = MutableStateFlow(false)
         val connected: StateFlow<Boolean> = _connected
@@ -97,6 +107,7 @@ class CaptionService : AccessibilityService() {
     private var activeMode: Boolean? = null
     private val autoCaptions = AutoCaptions()
     private val diagLastText = HashMap<String, String>()
+    private var meetingWindowId = -1
 
     private val poll = object : Runnable {
         override fun run() {
@@ -124,7 +135,49 @@ class CaptionService : AccessibilityService() {
             }
         }
         handler.postDelayed(poll, POLL_MS)
+        app.engine.screenshot = { meetingScreenshot() }
         if (app.prefs.diagnostics) DiagLog.log("SERVICE CONNECTED")
+    }
+
+    /**
+     * What the meeting shows (the shared presentation), as a small JPEG in base64 for the AI.
+     * On Android 14+ only the meeting window is captured, so the island never covers it.
+     */
+    private suspend fun meetingScreenshot(): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val shot = suspendCancellableCoroutine<ScreenshotResult?> { cont ->
+            val callback = object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) = cont.resume(result)
+                override fun onFailure(errorCode: Int) = cont.resume(null)
+            }
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && meetingWindowId >= 0) {
+                    takeScreenshotOfWindow(meetingWindowId, mainExecutor, callback)
+                } else {
+                    takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
+                }
+            } catch (e: Exception) {
+                cont.resume(null)
+            }
+        } ?: return null
+        return withContext(Dispatchers.Default) {
+            try {
+                val buffer = shot.hardwareBuffer
+                val full = try {
+                    Bitmap.wrapHardwareBuffer(buffer, shot.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                } finally {
+                    buffer.close()
+                } ?: return@withContext null
+                val scale = minOf(1f, SCREENSHOT_MAX_SIDE / maxOf(full.width, full.height).toFloat())
+                val small = Bitmap.createScaledBitmap(full, (full.width * scale).toInt(), (full.height * scale).toInt(), true)
+                val out = ByteArrayOutputStream()
+                small.compress(Bitmap.CompressFormat.JPEG, 70, out)
+                Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+            } catch (e: Exception) {
+                DiagLog.log("SCREENSHOT ERROR ${e.message}")
+                null
+            }
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -140,6 +193,7 @@ class CaptionService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        app.engine.screenshot = null
         overlay?.destroy()
         overlay = null
         scope.cancel()
@@ -199,7 +253,10 @@ class CaptionService : AccessibilityService() {
             if (!isMeetingApp && !allApps) continue
             val inCall = isMeetingApp && (pkg == LIVE_CAPTION || inCall(pkg, root, now))
             if (inCall && pkg != LIVE_CAPTION) {
-                if (meetingPackage == null) meetingPackage = pkg
+                if (meetingPackage == null) {
+                    meetingPackage = pkg
+                    meetingWindowId = window.id
+                }
                 meetingRoots.add(root)
             }
             // Gmail's inbox is never read; Meet/Zoom screens are, so captions keep a call alive.

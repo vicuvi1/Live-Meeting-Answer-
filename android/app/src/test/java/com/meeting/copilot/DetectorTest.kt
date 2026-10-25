@@ -38,6 +38,17 @@ class DetectorTest {
     }
 
     @Test
+    fun questionsToTheWholeGroup() {
+        // From the real test: a question to everyone, without her name and without a question mark.
+        assertTrue(Detector.isQuestion("Cine poate să spună definiția la educație"))
+        assertTrue(Detector.isQuestion("poate cineva să ne explice"))
+        assertTrue(Detector.isQuestion("ce înseamnă pedagogie"))
+        assertTrue(Detector.isQuestion("dați un exemplu de metodă activă"))
+        assertFalse(Detector.isQuestion("Definiția educației este procesul de formare a omului."))
+        assertFalse(Detector.isQuestion("dar super am înțeles înseamnă că să aibă acces la internet"))
+    }
+
+    @Test
     fun detectsEnglishCaptions() {
         assertTrue(Detector.looksEnglish(listOf("So we will talk about the budget and what you can do for this project")))
         assertFalse(Detector.looksEnglish(listOf("Bună ziua, acum vorbim despre buget și ce trebuie să facem pentru proiect")))

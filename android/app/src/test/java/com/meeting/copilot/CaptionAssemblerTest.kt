@@ -166,6 +166,17 @@ class CaptionAssemblerTest {
     }
 
     @Test
+    fun commitNowSavesTheQuestionStillOnScreen() {
+        show("Cine poate")
+        show("Cine poate spune definiția")
+        assembler.commitNow() // "Ce să răspund?" pressed before the pause
+        assertEquals("Cine poate spune definiția", utterances.single().second)
+        show("Cine poate spune definiția la educație")
+        pause()
+        assertEquals(listOf("Cine poate spune definiția", "la educație"), utterances.map { it.second })
+    }
+
+    @Test
     fun alignHandlesGrowingLastWord() {
         assertEquals(0, align(listOf("Bună", "ziu"), listOf("Bună", "ziua", "tuturor")))
         assertEquals(2, align(listOf("a", "b", "c", "d"), listOf("c", "d", "e")))

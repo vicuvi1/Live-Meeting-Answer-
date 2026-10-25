@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -86,6 +87,9 @@ class MeetingEngine(
         const val CATCH_UP_STALE_MS = 45_000L
         const val MENTION_WINDOW_MS = 15_000L
         const val DIRECT_COOLDOWN_MS = 20_000L
+        const val GROUP_QUESTION_ALERT_MS = 30_000L
+        const val LATEST_QUESTION_MS = 3 * 60_000L
+        const val SCREENSHOT_TIMEOUT_MS = 1_500L
         const val TOPIC_COOLDOWN_MS = 180_000L
         const val NO_CAPTIONS_WARNING_MS = 60_000L
         const val CAPTIONS_HINT_MS = 45_000L
@@ -122,6 +126,9 @@ class MeetingEngine(
 
     val assembler = CaptionAssembler(this)
 
+    /** Set by the caption service: the meeting screen (shared presentation) as JPEG base64. */
+    var screenshot: (suspend () -> String?)? = null
+
     private var detector = Detector(emptyList(), emptyList())
     private var detectorVersion = -1
 
@@ -143,6 +150,8 @@ class MeetingEngine(
     private var answerJob: Job? = null
     private var pendingMentionAt = 0L
     private var lastDirectAt = 0L
+    private var lastGroupQuestionAt = 0L
+    private var committingForAnswer = false
     private val lastTopicAlert = HashMap<String, Long>()
     /** After she ends a meeting by hand, captions still on screen must not start a new one. */
     private var suppressUntilHidden = false
@@ -242,7 +251,16 @@ class MeetingEngine(
 
     /** "Ce să răspund?" pressed by hand, or a detected question. */
     fun requestAnswer(trigger: Line? = null) {
-        val target = trigger ?: lines.lastOrNull { !isSelf(it.speaker) }
+        if (trigger == null) {
+            // The question just asked is often still on screen, not yet a saved line.
+            committingForAnswer = true
+            try {
+                assembler.commitNow()
+            } finally {
+                committingForAnswer = false
+            }
+        }
+        val target = trigger ?: latestQuestion() ?: lines.lastOrNull { !isSelf(it.speaker) }
         if (target == null) {
             _state.update { it.copy(answerError = "Încă nu am nicio replică din ședință.", answer = null) }
             return
@@ -260,17 +278,21 @@ class MeetingEngine(
         }
         if (!llm.isConfigured()) return
 
-        val recent = lines.filter { it.ts >= target.ts - ANSWER_CONTEXT_MS && it.localId != target.localId }
+        // Only what was said up to the question, so the AI can't pick an older or later one.
+        val recent = lines.subList(0, maxOf(index, 0)).filter { it.ts >= target.ts - ANSWER_CONTEXT_MS }
             .takeLast(120).map { it.toPrompt() }
         val catchUp = _state.value.catchUp
         answerJob?.cancel()
         answerJob = main.launch {
             try {
+                // The question may be about the slide on screen; a slow capture is skipped.
+                val image = runCatching { withTimeoutOrNull(SCREENSHOT_TIMEOUT_MS) { screenshot?.invoke() } }.getOrNull()
                 val json = llm.json(
                     Prompts.answerSystem(prefs.displayName()),
                     Prompts.answerUser(profile(), catchUp, recent, target.toPrompt()),
-                    maxTokens = 1_500,
+                    maxTokens = 600,
                     timeoutMs = 20_000,
+                    imageJpeg = image,
                 )
                 val answer = Prompts.parseAnswer(json, target.text, now())
                 _state.update { it.copy(answer = answer, answerLoading = false, answerError = null) }
@@ -284,6 +306,12 @@ class MeetingEngine(
                 _state.update { it.copy(answerLoading = false, answerError = e.message ?: "Eroare AI") }
             }
         }
+    }
+
+    /** The newest question someone else asked in the last few minutes. */
+    private fun latestQuestion(): Line? {
+        val since = now() - LATEST_QUESTION_MS
+        return lines.lastOrNull { it.ts >= since && !isSelf(it.speaker) && Detector.isQuestion(it.text) }
     }
 
     fun dismissAnswer() {
@@ -392,6 +420,7 @@ class MeetingEngine(
         val result = detector.analyze(text)
         var flags = 0
         var direct = false
+        var groupQuestion = false
 
         if (!self) {
             when {
@@ -402,6 +431,8 @@ class MeetingEngine(
                     alert(AlertLevel.MENTION, "Ai fost menționată", lineLabel(speaker, text))
                 }
                 result.isQuestion && now - pendingMentionAt < MENTION_WINDOW_MS -> direct = true
+                // A question to everyone ("cine poate spune…?"): a gentle alert, the answer ready.
+                result.isQuestion && TextNorm.words(text).size >= 3 -> groupQuestion = true
                 result.topic != null && now - (lastTopicAlert[result.topic] ?: 0L) > TOPIC_COOLDOWN_MS -> {
                     flags = flags or Db.FLAG_TOPIC
                     lastTopicAlert[result.topic] = now
@@ -432,6 +463,7 @@ class MeetingEngine(
             withContext(Dispatchers.Main) { dbIds[line.localId] = rowId }
         }
 
+        if (committingForAnswer) return // "Ce să răspund?" picks the question itself
         if (direct && now - lastDirectAt > DIRECT_COOLDOWN_MS) {
             lastDirectAt = now
             pendingMentionAt = 0L
@@ -440,6 +472,13 @@ class MeetingEngine(
             requestAnswer(line)
         } else if (direct) {
             requestAnswer(line) // follow-up question right after: refresh the answer quietly
+        } else if (groupQuestion && now - lastDirectAt > DIRECT_COOLDOWN_MS) {
+            // Never covers a question addressed to her that is still fresh.
+            if (now - lastGroupQuestionAt > GROUP_QUESTION_ALERT_MS) {
+                lastGroupQuestionAt = now
+                alert(AlertLevel.QUESTION, "Întrebare în ședință", lineLabel(speaker, text))
+            }
+            requestAnswer(line)
         }
     }
 
