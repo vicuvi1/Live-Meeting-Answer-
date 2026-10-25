@@ -77,6 +77,11 @@ class LlmClient(private val prefs: Prefs) {
                 if (attempt++ >= 1) throw LlmException(e.message ?: "Serviciul AI e ocupat.")
                 delay(1_500)
             } catch (e: ModelNotFoundException) {
+                // OpenRouter answers 404 when the model can't take images: retry with words only.
+                if (image != null) {
+                    image = null
+                    continue
+                }
                 // Google retires models regularly: switch to its newest Flash model and retry once.
                 val replacement = if (provider == Prefs.PROVIDER_GEMINI && !switchedModel) currentGeminiFlash() else null
                 if (replacement == null || replacement == prefs.geminiModel.trim()) {

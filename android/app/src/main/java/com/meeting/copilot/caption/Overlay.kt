@@ -651,6 +651,7 @@ class Overlay(
             buttons.addView(button("Am răspuns", C.green, filled = false) { engine.dismissAnswer() }, weighted().apply { marginEnd = dp(6) })
             buttons.addView(button("Ultima întrebare", C.blue, filled = false) { engine.requestAnswer() }, weighted().apply { marginStart = dp(6) })
             content.addView(buttons.top(8))
+            if (prefs.diagnostics) content.addView(button("Captură diagnostic", C.muted, filled = false) { onDump() }.top(8))
             return
         } else {
             state.answerError?.let { content.addView(note(it, C.red).top(10)) }

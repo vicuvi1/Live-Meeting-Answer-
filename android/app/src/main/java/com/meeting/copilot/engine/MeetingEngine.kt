@@ -88,6 +88,8 @@ class MeetingEngine(
         const val MENTION_WINDOW_MS = 15_000L
         const val DIRECT_COOLDOWN_MS = 20_000L
         const val GROUP_QUESTION_ALERT_MS = 30_000L
+        /** How long the answer to a question asked to her by name stays on screen untouched. */
+        const val DIRECT_HOLD_MS = 90_000L
         const val LATEST_QUESTION_MS = 3 * 60_000L
         const val SCREENSHOT_TIMEOUT_MS = 1_500L
         const val TOPIC_COOLDOWN_MS = 180_000L
@@ -290,7 +292,7 @@ class MeetingEngine(
                 val json = llm.json(
                     Prompts.answerSystem(prefs.displayName()),
                     Prompts.answerUser(profile(), catchUp, recent, target.toPrompt()),
-                    maxTokens = 600,
+                    maxTokens = 1_500, // room for models that think before answering; the prompt keeps it short
                     timeoutMs = 20_000,
                     imageJpeg = image,
                 )
@@ -315,6 +317,7 @@ class MeetingEngine(
     }
 
     fun dismissAnswer() {
+        lastDirectAt = 0L // answered: the next question may show right away
         _state.update { it.copy(answer = null, answerError = null, answerLoading = false, alert = AlertLevel.NONE) }
     }
 
@@ -472,8 +475,8 @@ class MeetingEngine(
             requestAnswer(line)
         } else if (direct) {
             requestAnswer(line) // follow-up question right after: refresh the answer quietly
-        } else if (groupQuestion && now - lastDirectAt > DIRECT_COOLDOWN_MS) {
-            // Never covers a question addressed to her that is still fresh.
+        } else if (groupQuestion && now - lastDirectAt > DIRECT_HOLD_MS) {
+            // Never covers the answer to a question addressed to her while she may still be answering.
             if (now - lastGroupQuestionAt > GROUP_QUESTION_ALERT_MS) {
                 lastGroupQuestionAt = now
                 alert(AlertLevel.QUESTION, "Întrebare în ședință", lineLabel(speaker, text))
