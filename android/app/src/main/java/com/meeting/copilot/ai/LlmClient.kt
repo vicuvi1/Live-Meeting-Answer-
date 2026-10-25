@@ -29,7 +29,14 @@ class LlmClient(private val prefs: Prefs) {
      * is filled in too, it uses that one instead; an exhausted provider isn't asked again until
      * its limit resets, so the app doesn't fail every 90 seconds.
      */
-    suspend fun json(system: String, user: String, maxTokens: Int, timeoutMs: Int = 25_000, imageJpeg: String? = null): JSONObject =
+    suspend fun json(
+        system: String,
+        user: String,
+        maxTokens: Int,
+        timeoutMs: Int = 25_000,
+        imageJpeg: String? = null,
+        web: Boolean = false,
+    ): JSONObject =
         withContext(Dispatchers.IO) {
             if (!isConfigured()) throw LlmException("Lipsește cheia AI (Setări → AI).")
             var lastError: String? = null
@@ -39,7 +46,7 @@ class LlmClient(private val prefs: Prefs) {
                     continue
                 }
                 try {
-                    return@withContext call(provider, system, user, maxTokens, timeoutMs, imageJpeg)
+                    return@withContext call(provider, system, user, maxTokens, timeoutMs, imageJpeg, web)
                 } catch (e: QuotaException) {
                     blockedUntil[provider] = System.currentTimeMillis() + e.waitMs
                     blockedReason[provider] = e.message.orEmpty()
@@ -57,16 +64,16 @@ class LlmClient(private val prefs: Prefs) {
         return if (backupKey.isNotBlank()) listOf(primary, backup) else listOf(primary)
     }
 
-    private suspend fun call(provider: String, system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): JSONObject {
+    private suspend fun call(provider: String, system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?, web: Boolean): JSONObject {
         var image = imageJpeg
         var attempt = 0
         var switchedModel = false
         while (true) {
             try {
                 val text = if (provider == Prefs.PROVIDER_OPENROUTER) {
-                    openRouter(system, user, maxTokens, timeoutMs, image)
+                    openRouter(system, user, maxTokens, timeoutMs, image, web)
                 } else {
-                    gemini(system, user, maxTokens, timeoutMs, image)
+                    gemini(system, user, maxTokens, timeoutMs, image, web)
                 }
                 return parseJson(text)
             } catch (e: LlmException) {
@@ -114,12 +121,13 @@ class LlmClient(private val prefs: Prefs) {
         null
     }
 
-    private fun gemini(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): String {
+    private fun gemini(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?, web: Boolean): String {
         val model = prefs.geminiModel.trim().ifEmpty { "gemini-3.8-flash" }
         val generation = JSONObject()
             .put("temperature", 0.3)
             .put("maxOutputTokens", maxTokens)
-            .put("responseMimeType", "application/json")
+        // Google Search grounding can't be combined with strict JSON output; the parser copes.
+        if (!web) generation.put("responseMimeType", "application/json")
         // 2.5 Flash models "think" by default, which adds seconds; these short tasks don't need it.
         if (model.contains("2.5-flash")) generation.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
         val body = JSONObject()
@@ -136,6 +144,7 @@ class LlmClient(private val prefs: Prefs) {
                 )
             )
             .put("generationConfig", generation)
+        if (web) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
         val response = post(
             "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",
             mapOf("x-goog-api-key" to prefs.geminiKey.trim()),
@@ -153,7 +162,7 @@ class LlmClient(private val prefs: Prefs) {
         }
     }
 
-    private fun openRouter(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?): String {
+    private fun openRouter(system: String, user: String, maxTokens: Int, timeoutMs: Int, imageJpeg: String?, web: Boolean): String {
         val model = prefs.openRouterModel.trim().ifEmpty { "anthropic/claude-haiku-5.5" }
         val userContent: Any = if (imageJpeg == null) user else JSONArray()
             .put(JSONObject().put("type", "text").put("text", user))
@@ -168,6 +177,9 @@ class LlmClient(private val prefs: Prefs) {
                     .put(JSONObject().put("role", "system").put("content", system))
                     .put(JSONObject().put("role", "user").put("content", userContent))
             )
+            // Of the servers that run this model, use the one answering fastest right now.
+            .put("provider", JSONObject().put("sort", "latency"))
+        if (web) body.put("plugins", JSONArray().put(JSONObject().put("id", "web").put("max_results", 3)))
         // Strict JSON mode keeps replies parseable; a model that doesn't support it is remembered.
         val jsonMode = model !in noJsonMode
         if (jsonMode) body.put("response_format", JSONObject().put("type", "json_object"))
@@ -184,7 +196,7 @@ class LlmClient(private val prefs: Prefs) {
         } catch (e: LlmException) {
             if (!jsonMode || e.message?.contains("response_format", ignoreCase = true) != true) throw e
             noJsonMode.add(model)
-            return openRouter(system, user, maxTokens, timeoutMs, imageJpeg)
+            return openRouter(system, user, maxTokens, timeoutMs, imageJpeg, web)
         }
         return response.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
             ?: throw LlmException("OpenRouter nu a returnat niciun răspuns.")
@@ -201,12 +213,16 @@ class LlmClient(private val prefs: Prefs) {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
+        var reusable = false
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code in 200..299) return JSONObject(text)
+            if (code in 200..299) {
+                reusable = true
+                return JSONObject(text)
+            }
             val message = errorMessage(text)
             val gemini = url.contains("googleapis")
             when {
@@ -229,7 +245,28 @@ class LlmClient(private val prefs: Prefs) {
         } catch (e: IOException) {
             throw LlmException("Eroare de rețea: ${e.message}")
         } finally {
-            connection.disconnect()
+            // After a good reply the connection stays open for the next question: a new secure
+            // connection costs up to a second on mobile data.
+            if (!reusable) connection.disconnect()
+        }
+    }
+
+    /**
+     * Opens the connection to the AI service ahead of time (start of a meeting, and again when
+     * it has been idle), so the first question doesn't pay for connecting.
+     */
+    suspend fun warmUp() = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext
+        val url = if (prefs.provider == Prefs.PROVIDER_OPENROUTER) "https://openrouter.ai/api/v1/key" else "https://generativelanguage.googleapis.com/"
+        try {
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                if (prefs.provider == Prefs.PROVIDER_OPENROUTER) setRequestProperty("Authorization", "Bearer ${prefs.openRouterKey.trim()}")
+            }
+            val code = connection.responseCode
+            (if (code in 200..299) connection.inputStream else connection.errorStream)?.use { it.readBytes() }
+        } catch (_: Exception) {
         }
     }
 

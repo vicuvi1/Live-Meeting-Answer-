@@ -45,7 +45,7 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
         private val PATTERNS = mapOf(
             AlertLevel.DIRECT to longArrayOf(0, 450, 150, 450, 150, 700),
             AlertLevel.MENTION to longArrayOf(0, 250, 150, 250),
-            AlertLevel.QUESTION to longArrayOf(0, 200, 120, 200),
+            AlertLevel.QUESTION to longArrayOf(0, 450, 150, 450, 150, 700),
             AlertLevel.TOPIC to longArrayOf(0, 120),
             AlertLevel.HEALTH to longArrayOf(0, 100, 120, 100, 120, 100),
         )
@@ -62,12 +62,14 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
     fun fire(level: AlertLevel, title: String, text: String): Boolean {
         if (level == AlertLevel.NONE) return false
         val posted = notify(level, title, text)
-        // A question's notification beeps and vibrates by itself (following ring/silent mode);
-        // the app vibrates only for the softer alerts, or when notifications are blocked.
-        if (prefs.vibrate && (level != AlertLevel.DIRECT || !posted)) vibrate(level)
-        if (level == AlertLevel.DIRECT && prefs.whisperQuestion) speakIfHeadset(text)
+        // The app always vibrates itself as well: during a call, on silent, or with HyperOS's
+        // notification vibration off, the notification alone may arrive without any.
+        if (prefs.vibrate) vibrate(level)
+        if (isQuestion(level) && prefs.whisperQuestion) speakIfHeadset(text)
         return posted
     }
+
+    private fun isQuestion(level: AlertLevel) = level == AlertLevel.DIRECT || level == AlertLevel.QUESTION
 
     fun info(title: String, text: String) {
         post(ID_INFO, CHANNEL_INFO, title, text, NotificationCompat.PRIORITY_DEFAULT)
@@ -83,12 +85,16 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
             val effect = VibrationEffect.createWaveform(pattern, -1)
-            // Marked as a notification vibration: Android may drop unmarked ones from background apps.
+            // Marked so Android doesn't drop it: a question vibrates like an alarm (also on silent and
+            // during the call, which is exactly when she needs it); the rest like a notification.
+            val question = isQuestion(level)
             if (Build.VERSION.SDK_INT >= 33) {
-                vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_NOTIFICATION))
+                val usage = if (question) VibrationAttributes.USAGE_ALARM else VibrationAttributes.USAGE_NOTIFICATION
+                vibrator.vibrate(effect, VibrationAttributes.createForUsage(usage))
             } else {
+                val usage = if (question) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_EVENT
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).build())
+                vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(usage).build())
             }
         } catch (_: Exception) {
         }
@@ -96,8 +102,9 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
 
     /** True when the notification could be shown. */
     private fun notify(level: AlertLevel, title: String, text: String): Boolean {
-        val channel = if (level == AlertLevel.DIRECT) CHANNEL_DIRECT else CHANNEL_SOFT
-        val priority = if (level == AlertLevel.DIRECT) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT
+        // Any question, to her or to everyone, uses the channel with sound.
+        val channel = if (isQuestion(level)) CHANNEL_DIRECT else CHANNEL_SOFT
+        val priority = if (isQuestion(level)) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT
         return post(ID_ALERT, channel, title, text, priority)
     }
 

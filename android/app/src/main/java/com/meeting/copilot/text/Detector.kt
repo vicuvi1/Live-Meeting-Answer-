@@ -114,5 +114,49 @@ class Detector(names: List<String>, topics: List<String>) {
             val normalized = TextNorm.norm(text)
             return QUESTION_PATTERNS.any { it.containsMatchIn(normalized) }
         }
+
+        /** Words that open a question when they start a sentence ("Ce rol are…", "Unde se află…"). */
+        private val QUESTION_STARTS = setOf(
+            "ce", "cum", "cand", "unde", "cine", "care", "cat", "cata", "cati", "cate", "oare", "cumva",
+            "poti", "puteti", "poate", "stiti", "stii", "stie", "aveti", "exista", "sunteti", "vreti", "vrei",
+        )
+        private val QUESTION_STARTS_2 = setOf(
+            "de ce", "in ce", "la ce", "pentru ce", "din ce", "cu ce", "despre ce", "in care", "la care", "cat de",
+            "ati auzit", "ati citit", "ai citit", "ati vazut", "ai vazut", "se poate", "e adevarat", "este adevarat",
+        )
+        /** Sentences that start like a question but aren't one ("Cum am spus…"). */
+        private val NOT_QUESTION_STARTS = listOf(
+            "cum am spus", "cum spuneam", "cum ziceam", "cum v-am spus", "cum stiti", "ce bine", "ce frumos",
+            "cand am", "cand eram", "unde am", "cat timp", "care va sa zica", "cat despre",
+        )
+        /** A task the teacher gives out loud ("Explicați…", "Dați un exemplu…"). */
+        private val ASK_VERBS = Regex(
+            "\\b(precizati|argumentati|comparati|descrieti|identificati|numiti|enumerati|explicati|definiti|justificati|" +
+                "analizati|dati exemple|dati un exemplu|spuneti-mi|spune-mi|ce parere aveti|ce credeti)\\b"
+        )
+        private val SENTENCE_END = Regex("[.!?…\\n]+")
+
+        /**
+         * Wider than [isQuestion]: anything that may be a question, including a sentence that just
+         * starts like one. The AI then confirms it before she is alerted, so a false hit costs nothing.
+         */
+        fun maybeQuestion(text: String): Boolean {
+            if (isQuestion(text)) return true
+            val normalized = TextNorm.norm(text)
+            if (ASK_VERBS.containsMatchIn(normalized)) return true
+            return normalized.split(SENTENCE_END).map { it.trim() }.any { sentence ->
+                val words = sentence.split(' ').filter { it.isNotEmpty() }
+                words.size >= 3 && NOT_QUESTION_STARTS.none { sentence.startsWith(it) } &&
+                    (words[0] in QUESTION_STARTS || "${words[0]} ${words[1]}" in QUESTION_STARTS_2)
+            }
+        }
+
+        private val ABOUT_SCREEN = Regex(
+            "\\b(slide\\w*|diapozitiv\\w*|ecran\\w*|prezentar\\w*|imagin\\w*|poza\\w*|fotografi\\w*|grafic\\w*|diagram\\w*|" +
+                "tabel\\w*|figur\\w*|schem\\w*|harta|hartii|formul\\w*|vedeti|vezi|observati|observi|scrie|scris|pagina)\\b"
+        )
+
+        /** The question points at what is shown on screen, so the AI needs a screenshot. */
+        fun aboutScreen(text: String): Boolean = ABOUT_SCREEN.containsMatchIn(TextNorm.norm(text))
     }
 }

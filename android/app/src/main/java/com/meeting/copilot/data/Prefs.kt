@@ -29,6 +29,8 @@ class Prefs(context: Context) {
 
     var vibrate by flag("vibrate", true)
     var whisperQuestion by flag("whisper_question", false)
+    /** Check facts on the web when the AI is not sure (OpenRouter web plugin or Google Search). */
+    var webSearch by flag("web_search", true)
     /** The main on/off switch: off = nothing listens and no battery is used. */
     var active by flag("active", true)
     /** Switch off by itself when a meeting ends, so it doesn't stay on by mistake. */
