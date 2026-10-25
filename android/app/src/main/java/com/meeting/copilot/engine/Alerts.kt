@@ -112,7 +112,7 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_app)
+            .setSmallIcon(R.drawable.ic_notif)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
