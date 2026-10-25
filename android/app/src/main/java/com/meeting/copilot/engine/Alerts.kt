@@ -58,13 +58,15 @@ class Alerts(private val context: Context, private val prefs: Prefs) : TextToSpe
         createChannels()
     }
 
-    fun fire(level: AlertLevel, title: String, text: String) {
-        if (level == AlertLevel.NONE) return
+    /** Returns whether the notification was posted (false when notifications are blocked). */
+    fun fire(level: AlertLevel, title: String, text: String): Boolean {
+        if (level == AlertLevel.NONE) return false
         val posted = notify(level, title, text)
         // A question's notification beeps and vibrates by itself (following ring/silent mode);
         // the app vibrates only for the softer alerts, or when notifications are blocked.
         if (prefs.vibrate && (level != AlertLevel.DIRECT || !posted)) vibrate(level)
         if (level == AlertLevel.DIRECT && prefs.whisperQuestion) speakIfHeadset(text)
+        return posted
     }
 
     fun info(title: String, text: String) {

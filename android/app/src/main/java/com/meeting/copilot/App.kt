@@ -19,6 +19,8 @@ class App : Application() {
         private set
     lateinit var engine: MeetingEngine
         private set
+    lateinit var alerts: Alerts
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -33,7 +35,8 @@ class App : Application() {
         prefs = Prefs(this)
         db = Db(this)
         llm = LlmClient(prefs)
-        engine = MeetingEngine(prefs, db, llm, Alerts(this, prefs))
+        alerts = Alerts(this, prefs)
+        engine = MeetingEngine(prefs, db, llm, alerts)
         // Keep the quick-panel on/off button in sync when the switch changes in the app.
         var lastActive = prefs.active
         MainScope().launch {

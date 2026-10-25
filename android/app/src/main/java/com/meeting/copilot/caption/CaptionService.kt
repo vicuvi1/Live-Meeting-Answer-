@@ -135,7 +135,7 @@ class CaptionService : AccessibilityService() {
             }
         }
         handler.postDelayed(poll, POLL_MS)
-        app.engine.screenshot = { meetingScreenshot() }
+        app.engine.screenshot = { captureScreen(meetingOnly = true) }
         if (app.prefs.diagnostics) DiagLog.log("SERVICE CONNECTED")
     }
 
@@ -143,7 +143,7 @@ class CaptionService : AccessibilityService() {
      * What the meeting shows (the shared presentation), as a small JPEG in base64 for the AI.
      * On Android 14+ only the meeting window is captured, so the island never covers it.
      */
-    private suspend fun meetingScreenshot(): String? {
+    suspend fun captureScreen(meetingOnly: Boolean): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val shot = suspendCancellableCoroutine<ScreenshotResult?> { cont ->
             val callback = object : TakeScreenshotCallback {
@@ -151,7 +151,7 @@ class CaptionService : AccessibilityService() {
                 override fun onFailure(errorCode: Int) = cont.resume(null)
             }
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && meetingWindowId >= 0) {
+                if (meetingOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && meetingWindowId >= 0) {
                     takeScreenshotOfWindow(meetingWindowId, mainExecutor, callback)
                 } else {
                     takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, callback)
