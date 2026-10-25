@@ -99,6 +99,8 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
 
         update?.let { UpdateCard(it, resumes) }
 
+        if (state.status != Status.LISTENING) SelfCheckCard(app, onOpenSettings)
+
         val bubbleHidden by Overlay.hidden.collectAsState()
         if (bubbleHidden && (state.meetingVisible || state.status == Status.LISTENING)) {
             AppCard(padding = 16.dp) {
