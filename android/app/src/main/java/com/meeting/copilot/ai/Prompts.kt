@@ -19,10 +19,16 @@ data class CatchUp(
 data class Answer(
     val trigger: String,
     val question: String,
+    /** Short facts that explain or back up the answer, for her to understand it. */
     val context: List<String>,
     val answer: String,
     val confident: Boolean,
     val createdAt: Long,
+    /** False when the AI judged the line is not really a question someone must answer. */
+    val needsAnswer: Boolean = true,
+    /** The AI wants to check current or specific facts on the web before answering for sure. */
+    val needsWeb: Boolean = false,
+    val fromWeb: Boolean = false,
 )
 
 data class Task(val task: String, val from: String, val deadline: String)
@@ -97,17 +103,19 @@ Răspunde DOAR cu JSON, exact în forma:
 
     // ---- Instant answer when she is asked something ----
 
-    fun answerSystem(name: String) = """
-Ești asistentul discret al utilizatoarei $name într-o ședință sau un curs online în limba română. Tocmai s-a pus o întrebare (ei sau tuturor) și $name trebuie să poată răspunde ACUM, cu voce tare.
+    fun answerSystem(name: String, web: Boolean = false) = """
+Ești asistentul discret al utilizatoarei $name într-o ședință sau un curs online în limba română. Tocmai s-a spus ceva ce ar putea fi o întrebare (pentru ea sau pentru toți) și $name trebuie să poată răspunde ACUM, cu voce tare.
 Reguli:
-- Răspunde DOAR la replica marcată „Întrebarea de acum”, nu la întrebări mai vechi din discuție.
-- Răspunsul: SCURT, maxim 25 de cuvinte (1–2 fraze), la persoana I, exact cum l-ar spune ea, politicos și sigur pe sine. Ea îl citește dintr-o privire, în timp ce urmărește prezentarea.
-- Dacă primești o captură a ecranului ședinței (prezentarea, slide-ul partajat), folosește-o când întrebarea se referă la ce se vede acolo; altfel ignor-o.
-- Întrebări de cunoștințe (o definiție, o explicație, un exemplu, un concept din curs): răspunde corect și concret din cunoștințele tale generale, pe înțelesul tuturor, și pune "confident": true dacă ești sigur.
-- Întrebări despre ea, munca ei, cifre, date, statusuri sau promisiuni: folosește DOAR fapte din notițele ei sau din discuție, NU inventa.
-- Dacă îți lipsesc faptele, pune "confident": false și dă un răspuns sigur, care nu promite nimic concret (că verifică și revine), legat de subiectul întrebării.
+- Mai întâi decide: este replica marcată „Întrebarea de acum” o întrebare sau o cerință la care cineva din sală ar trebui să răspundă? Pune "needs_answer": false pentru afirmații, întrebări retorice („e clar?”, „da?”, „ați înțeles?”), sau când vorbitorul își răspunde singur.
+- Răspunde DOAR la acea replică, nu la întrebări mai vechi din discuție.
+- "answer": ce să spună ea, 2–3 fraze clare și complete (max 50 de cuvinte), la persoana I, natural, politicos și sigur pe sine.
+- "details": 2–4 informații scurte care explică sau susțin răspunsul (definiție, exemplu, cifră, sursă), max 15 cuvinte fiecare, ca ea să înțeleagă ce spune.
+- Dacă primești o captură a ecranului ședinței (prezentarea, slide-ul partajat), folosește-o când întrebarea se referă la ce se vede acolo.
+- Întrebări de cunoștințe (definiție, explicație, exemplu, concept, fapt): răspunde corect și concret din cunoștințele tale generale.
+- Întrebări despre ea, munca ei, cifrele sau promisiunile ei: folosește DOAR fapte din notițele ei sau din discuție, NU inventa; dacă lipsesc, un răspuns sigur care nu promite nimic concret și "confident": false.
+${if (web) "- Ai acces la căutare pe web: verifică faptele și folosește informații actuale și exacte; pune sursa principală într-un detaliu." else "- \"needs_web\": true doar dacă răspunsul corect depinde de informații actuale sau foarte specifice (date recente, legi, statistici, nume, evenimente) de care nu ești sigur."}
 Răspunde DOAR cu JSON, exact în forma:
-{"question":"ce s-a întrebat, max 12 cuvinte","answer":"ce să spună, max 25 de cuvinte","confident":true}
+{"needs_answer":true,"question":"ce s-a întrebat, max 12 cuvinte","answer":"ce să spună","details":["..."],"confident":true,"needs_web":false}
 """.trim()
 
     fun answerUser(profile: Profile, catchUp: CatchUp?, recent: List<PromptLine>, trigger: PromptLine) = buildString {
@@ -122,13 +130,16 @@ Răspunde DOAR cu JSON, exact în forma:
         append("\nÎntrebarea de acum: ").append(format(trigger)).append('\n')
     }
 
-    fun parseAnswer(json: JSONObject, trigger: String, now: Long) = Answer(
+    fun parseAnswer(json: JSONObject, trigger: String, now: Long, fromWeb: Boolean = false) = Answer(
         trigger = trigger,
         question = json.optString("question").trim().ifEmpty { trigger },
-        context = strings(json.optJSONArray("context")).take(2),
+        context = strings(json.optJSONArray("details")).take(4),
         answer = json.optString("answer").trim().ifEmpty { SAFE_LINE },
         confident = json.optBoolean("confident", false),
         createdAt = now,
+        needsAnswer = json.optBoolean("needs_answer", true),
+        needsWeb = !fromWeb && json.optBoolean("needs_web", false),
+        fromWeb = fromWeb,
     )
 
     // ---- Summary after the meeting ----

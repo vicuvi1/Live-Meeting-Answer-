@@ -640,11 +640,18 @@ class Overlay(
             })
             when {
                 answer.answer.isNotBlank() -> {
-                    card.addView(text(answer.answer, 18f, C.text, bold = true).top(4))
-                    if (!answer.confident) card.addView(text("Răspuns prudent", 12f, C.muted).top(4))
+                    card.addView(text(answer.answer, 15f, C.text, bold = true).top(4))
+                    answer.context.forEach { card.addView(text("•  $it", 12.5f, C.soft).top(3)) }
+                    val note = when {
+                        answer.fromWeb -> "Verificat pe web"
+                        state.answerLoading -> "Verific pe web…"
+                        !answer.confident -> "Răspuns prudent"
+                        else -> null
+                    }
+                    note?.let { card.addView(text(it, 11.5f, C.muted).top(4)) }
                 }
-                state.answerLoading -> card.addView(text("Pregătesc răspunsul…", 16f, C.soft).top(4))
-                state.answerError != null -> card.addView(text(state.answerError, 14f, C.red).top(4))
+                state.answerLoading -> card.addView(text("Pregătesc răspunsul…", 14f, C.soft).top(4))
+                state.answerError != null -> card.addView(text(state.answerError, 13f, C.red).top(4))
             }
             content.addView(card.top(8))
             val buttons = row()

@@ -49,6 +49,44 @@ class DetectorTest {
     }
 
     @Test
+    fun teacherQuestionsWithoutQuestionMark() {
+        // How teachers ask in class; the captions often have no "?".
+        assertTrue(Detector.maybeQuestion("Ce rol are familia în educația copilului"))
+        assertTrue(Detector.maybeQuestion("Bun. De ce credeți că metoda asta funcționează"))
+        assertTrue(Detector.maybeQuestion("Care sunt principiile educației"))
+        assertTrue(Detector.maybeQuestion("Unde se află hipotalamusul"))
+        assertTrue(Detector.maybeQuestion("Precizați trei funcții ale școlii"))
+        assertTrue(Detector.maybeQuestion("Ați citit capitolul despre Piaget"))
+        assertFalse(Detector.maybeQuestion("Cum am spus și data trecută, educația e un proces"))
+        assertFalse(Detector.maybeQuestion("Astăzi vorbim despre educația formală și nonformală."))
+        assertFalse(Detector.maybeQuestion("Ce bine că ați venit cu toții"))
+    }
+
+    @Test
+    fun questionsAboutTheSlideGetTheScreen() {
+        assertTrue(Detector.aboutScreen("Ce vedeți în graficul de pe slide"))
+        assertTrue(Detector.aboutScreen("Explicați schema din prezentare"))
+        assertFalse(Detector.aboutScreen("Ce rol are familia în educație"))
+    }
+
+    @Test
+    fun answerWithDetailsAndConfirmation() {
+        val json = LlmClient.parseJson(
+            "{\"needs_answer\":true,\"question\":\"Rolul familiei\",\"answer\":\"Familia este primul mediu educativ.\"," +
+                "\"details\":[\"Educație informală\",\"Valori și deprinderi\"],\"confident\":true,\"needs_web\":false}"
+        )
+        val answer = Prompts.parseAnswer(json, "trigger", 1)
+        assertEquals(listOf("Educație informală", "Valori și deprinderi"), answer.context)
+        assertTrue(answer.needsAnswer)
+        assertFalse(answer.needsWeb)
+        val rhetorical = Prompts.parseAnswer(LlmClient.parseJson("{\"needs_answer\":false}"), "e clar?", 1)
+        assertFalse(rhetorical.needsAnswer)
+        val web = Prompts.parseAnswer(LlmClient.parseJson("{\"answer\":\"x\",\"needs_web\":true}"), "t", 1, fromWeb = true)
+        assertFalse(web.needsWeb) // the web answer never asks for another search
+        assertTrue(web.fromWeb)
+    }
+
+    @Test
     fun detectsEnglishCaptions() {
         assertTrue(Detector.looksEnglish(listOf("So we will talk about the budget and what you can do for this project")))
         assertFalse(Detector.looksEnglish(listOf("Bună ziua, acum vorbim despre buget și ce trebuie să facem pentru proiect")))

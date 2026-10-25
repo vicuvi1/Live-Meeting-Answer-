@@ -366,15 +366,11 @@ private fun AnswerHero(state: UiState, onDismiss: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusDot(Palette.Red, pulsing = true, size = 10.dp)
             Spacer(Modifier.width(4.dp))
-            Eyebrow("Întrebare pentru tine", Palette.Red)
+            Eyebrow("Întrebare", Palette.Red)
         }
         Spacer(Modifier.height(8.dp))
-        Text(answer.question, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-        if (answer.context.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            answer.context.forEach { Bullet(it, Palette.Faint, MaterialTheme.typography.bodySmall) }
-        }
-        Spacer(Modifier.height(16.dp))
+        Text(answer.question, style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+        Spacer(Modifier.height(12.dp))
         Column(
             Modifier.fillMaxWidth().clip(InnerShape).background(Palette.GreenDeep)
                 .border(1.dp, Palette.Green.copy(alpha = 0.35f), InnerShape).padding(16.dp),
@@ -383,12 +379,22 @@ private fun AnswerHero(state: UiState, onDismiss: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             when {
                 answer.answer.isNotBlank() -> {
-                    Text(answer.answer, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
-                    if (!answer.confident) {
+                    Text(answer.answer, fontSize = 18.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold, color = Palette.Text)
+                    if (answer.context.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        answer.context.forEach { Bullet(it, Palette.Green, MaterialTheme.typography.bodySmall) }
+                    }
+                    val note = when {
+                        answer.fromWeb -> "Verificat pe web"
+                        state.answerLoading -> "Verific pe web…"
+                        !answer.confident -> "Răspuns prudent: nu am date sigure despre asta."
+                        else -> null
+                    }
+                    if (note != null) {
                         Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Info, null, tint = Palette.Muted, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Răspuns prudent: nu am date sigure despre asta.", style = MaterialTheme.typography.bodySmall, color = Palette.Muted)
+                            Text(note, style = MaterialTheme.typography.bodySmall, color = Palette.Muted)
                         }
                     }
                 }

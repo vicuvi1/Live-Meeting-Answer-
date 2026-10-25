@@ -87,7 +87,7 @@ class MeetingEngine(
         const val CATCH_UP_STALE_MS = 45_000L
         const val MENTION_WINDOW_MS = 15_000L
         const val DIRECT_COOLDOWN_MS = 20_000L
-        const val GROUP_QUESTION_ALERT_MS = 30_000L
+        const val GROUP_QUESTION_ALERT_MS = 8_000L
         /** How long the answer to a question asked to her by name stays on screen untouched. */
         const val DIRECT_HOLD_MS = 90_000L
         const val LATEST_QUESTION_MS = 3 * 60_000L
@@ -97,7 +97,11 @@ class MeetingEngine(
         const val CAPTIONS_HINT_MS = 45_000L
         const val END_NOT_VISIBLE_MS = 10 * 60_000L
         const val END_SILENT_MS = 15 * 60_000L
-        const val ANSWER_CONTEXT_MS = 6 * 60_000L
+        const val ANSWER_CONTEXT_MS = 3 * 60_000L
+        const val ANSWER_CONTEXT_LINES = 40
+        /** A possible question still on screen, unchanged this long, is handled without waiting for a pause. */
+        const val LIVE_QUESTION_SETTLE_MS = 700L
+        const val WARM_UP_EVERY_MS = 3 * 60_000L
         const val DIGEST_CONTEXT_MS = 8 * 60_000L
         private val SELF_SPEAKERS = setOf("tu", "you", "eu", "dvs", "dumneavoastra", "me")
 
@@ -154,6 +158,8 @@ class MeetingEngine(
     private var lastDirectAt = 0L
     private var lastGroupQuestionAt = 0L
     private var committingForAnswer = false
+    private var liveChangedAt = 0L
+    private var warmedUpAt = 0L
     private val lastTopicAlert = HashMap<String, Long>()
     /** After she ends a meeting by hand, captions still on screen must not start a new one. */
     private var suppressUntilHidden = false
@@ -163,7 +169,8 @@ class MeetingEngine(
         main.launch(dbThread) { runCatching { db.closeDanglingMeetings() } }
         main.launch {
             while (isActive) {
-                delay(if (prefs.active) 500 else 5_000) // switched off: barely wake up
+                // In a meeting a short beat lets a question be caught while it is still on screen.
+                delay(if (!prefs.active) 5_000 else if (sessionActive) 250 else 500) // switched off: barely wake up
                 try {
                     tick()
                 } catch (e: Exception) {
@@ -198,6 +205,7 @@ class MeetingEngine(
 
     override fun onLive(text: String, speaker: String?) {
         if (suppressUntilHidden) return
+        if (text != _state.value.live) liveChangedAt = now()
         if (text.isNotBlank()) {
             lastCaptionAt = now()
             ensureSession()
@@ -251,8 +259,15 @@ class MeetingEngine(
         if (hasNew || current.catchUp == null || stale) runDigest()
     }
 
+    /**
+     * How an answer request behaves. SHOW: the card opens at once ("Ce să răspund?", a question to
+     * her by name). CONFIRM: a possible question to everyone; she is alerted only after the AI
+     * confirms it really is a question, so false hits stay silent.
+     */
+    enum class AnswerMode { SHOW, CONFIRM }
+
     /** "Ce să răspund?" pressed by hand, or a detected question. */
-    fun requestAnswer(trigger: Line? = null) {
+    fun requestAnswer(trigger: Line? = null, mode: AnswerMode = AnswerMode.SHOW) {
         if (trigger == null) {
             // The question just asked is often still on screen, not yet a saved line.
             committingForAnswer = true
@@ -269,51 +284,94 @@ class MeetingEngine(
         }
         val now = now()
         val index = lines.indexOfFirst { it.localId == target.localId }
-        val before = if (index > 0) lines.subList(maxOf(0, index - 2), index).map { formatShort(it) } else emptyList()
-        // Show the question and what was said just before immediately; the AI fills in the answer.
-        _state.update {
-            it.copy(
-                answer = Answer(target.text, target.text, before, "", confident = false, createdAt = now),
-                answerLoading = llm.isConfigured(),
-                answerError = if (llm.isConfigured()) null else "Adaugă cheia AI în Setări ca să primești un răspuns sugerat.",
-            )
+        if (mode == AnswerMode.SHOW) {
+            // Show the question immediately; the AI fills in the answer.
+            _state.update {
+                it.copy(
+                    answer = Answer(target.text, target.text, emptyList(), "", confident = false, createdAt = now),
+                    answerLoading = llm.isConfigured(),
+                    answerError = if (llm.isConfigured()) null else "Adaugă cheia AI în Setări ca să primești un răspuns sugerat.",
+                )
+            }
         }
-        if (!llm.isConfigured()) return
+        if (!llm.isConfigured()) {
+            // Without AI nothing can confirm a question to everyone: alert on the clear ones only.
+            if (mode == AnswerMode.CONFIRM && Detector.isQuestion(target.text)) alertQuestion(target)
+            return
+        }
 
-        // Only what was said up to the question, so the AI can't pick an older or later one.
+        // Only what was said shortly before the question, so the AI can't pick an older one and the
+        // request stays small (a smaller request is answered faster).
         val recent = lines.subList(0, maxOf(index, 0)).filter { it.ts >= target.ts - ANSWER_CONTEXT_MS }
-            .takeLast(120).map { it.toPrompt() }
+            .takeLast(ANSWER_CONTEXT_LINES).map { it.toPrompt() }
         val catchUp = _state.value.catchUp
+        val user = Prompts.answerUser(profile(), catchUp, recent, target.toPrompt())
+        // The slide only travels when the question points at it: an image adds upload and reading time.
+        val wantsScreen = Detector.aboutScreen(target.text)
         answerJob?.cancel()
         answerJob = main.launch {
             try {
-                // The question may be about the slide on screen; a slow capture is skipped.
-                val image = runCatching { withTimeoutOrNull(SCREENSHOT_TIMEOUT_MS) { screenshot?.invoke() } }.getOrNull()
+                val image = if (wantsScreen) {
+                    runCatching { withTimeoutOrNull(SCREENSHOT_TIMEOUT_MS) { screenshot?.invoke() } }.getOrNull()
+                } else null
                 val json = llm.json(
                     Prompts.answerSystem(prefs.displayName()),
-                    Prompts.answerUser(profile(), catchUp, recent, target.toPrompt()),
+                    user,
                     maxTokens = 1_500, // room for models that think before answering; the prompt keeps it short
                     timeoutMs = 20_000,
                     imageJpeg = image,
                 )
                 val answer = Prompts.parseAnswer(json, target.text, now())
-                _state.update { it.copy(answer = answer, answerLoading = false, answerError = null) }
-                recordEvent("answer", JSONObject()
-                    .put("trigger", answer.trigger).put("question", answer.question)
-                    .put("context", JSONArray(answer.context)).put("answer", answer.answer)
-                    .put("confident", answer.confident).toString())
+                if (mode == AnswerMode.CONFIRM) {
+                    if (!answer.needsAnswer) {
+                        if (prefs.diagnostics) DiagLog.log("NOT A QUESTION (AI) :: ${target.text}")
+                        return@launch
+                    }
+                    alertQuestion(target)
+                }
+                _state.update { it.copy(answer = answer, answerLoading = answer.needsWeb, answerError = null) }
+                recordAnswer(answer)
+                if (answer.needsWeb && prefs.webSearch) {
+                    // Second step: the same question checked on the web; replaces the quick answer.
+                    val checked = runCatching {
+                        llm.json(Prompts.answerSystem(prefs.displayName(), web = true), user, maxTokens = 2_000, timeoutMs = 30_000, imageJpeg = image, web = true)
+                    }.getOrNull()
+                    val webAnswer = checked?.let { Prompts.parseAnswer(it, target.text, answer.createdAt, fromWeb = true) }
+                    _state.update {
+                        if (it.answer?.trigger != target.text) it
+                        else it.copy(answer = webAnswer?.takeIf { w -> w.needsAnswer } ?: it.answer, answerLoading = false)
+                    }
+                    webAnswer?.let { recordAnswer(it) }
+                } else if (answer.needsWeb) {
+                    _state.update { it.copy(answerLoading = false) }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(answerLoading = false, answerError = e.message ?: "Eroare AI") }
+                if (mode == AnswerMode.SHOW) _state.update { it.copy(answerLoading = false, answerError = e.message ?: "Eroare AI") }
+                else if (prefs.diagnostics) DiagLog.log("ANSWER ERROR ${e.message}")
             }
         }
     }
 
+    /** A question to everyone, confirmed: beep, vibrate and open the answer. */
+    private fun alertQuestion(line: Line) {
+        val now = now()
+        if (now - lastGroupQuestionAt < GROUP_QUESTION_ALERT_MS) return
+        lastGroupQuestionAt = now
+        alert(AlertLevel.QUESTION, "${line.speaker ?: "Cineva"} întreabă", lineLabel(line.speaker, line.text))
+        _openPanel.tryEmit(Unit)
+    }
+
+    private fun recordAnswer(answer: Answer) = recordEvent("answer", JSONObject()
+        .put("trigger", answer.trigger).put("question", answer.question)
+        .put("details", JSONArray(answer.context)).put("answer", answer.answer)
+        .put("confident", answer.confident).put("web", answer.fromWeb).toString())
+
     /** The newest question someone else asked in the last few minutes. */
     private fun latestQuestion(): Line? {
         val since = now() - LATEST_QUESTION_MS
-        return lines.lastOrNull { it.ts >= since && !isSelf(it.speaker) && Detector.isQuestion(it.text) }
+        return lines.lastOrNull { it.ts >= since && !isSelf(it.speaker) && Detector.maybeQuestion(it.text) }
     }
 
     fun dismissAnswer() {
@@ -434,8 +492,8 @@ class MeetingEngine(
                     alert(AlertLevel.MENTION, "Ai fost menționată", lineLabel(speaker, text))
                 }
                 result.isQuestion && now - pendingMentionAt < MENTION_WINDOW_MS -> direct = true
-                // A question to everyone ("cine poate spune…?"): a gentle alert, the answer ready.
-                result.isQuestion && TextNorm.words(text).size >= 3 -> groupQuestion = true
+                // Maybe a question to everyone ("Ce rol are…", "cine poate spune…?"): the AI confirms.
+                TextNorm.words(text).size >= 3 && Detector.maybeQuestion(text) -> groupQuestion = true
                 result.topic != null && now - (lastTopicAlert[result.topic] ?: 0L) > TOPIC_COOLDOWN_MS -> {
                     flags = flags or Db.FLAG_TOPIC
                     lastTopicAlert[result.topic] = now
@@ -477,11 +535,7 @@ class MeetingEngine(
             requestAnswer(line) // follow-up question right after: refresh the answer quietly
         } else if (groupQuestion && now - lastDirectAt > DIRECT_HOLD_MS) {
             // Never covers the answer to a question addressed to her while she may still be answering.
-            if (now - lastGroupQuestionAt > GROUP_QUESTION_ALERT_MS) {
-                lastGroupQuestionAt = now
-                alert(AlertLevel.QUESTION, "Întrebare în ședință", lineLabel(speaker, text))
-            }
-            requestAnswer(line)
+            requestAnswer(line, AnswerMode.CONFIRM)
         }
     }
 
@@ -534,6 +588,19 @@ class MeetingEngine(
             return
         }
         assembler.tick()
+        // A question doesn't wait for the 2.5 s pause that ends a sentence: once the words on
+        // screen look like a question and stop changing for a moment (or end in "?"), they are
+        // finalized now, which runs the question detection right away.
+        val live = _state.value.live
+        if (sessionActive && live.isNotBlank() &&
+            (live.trimEnd().endsWith('?') || (now - liveChangedAt >= LIVE_QUESTION_SETTLE_MS && Detector.maybeQuestion(live)))
+        ) {
+            assembler.commitNow()
+        }
+        if (sessionActive && now - warmedUpAt > WARM_UP_EVERY_MS) {
+            warmedUpAt = now
+            main.launch { llm.warmUp() }
+        }
         refreshStatus(now)
         val visible = now - lastMeetingVisibleAt < 5_000
         if (!visible) captionsHintShown = false
