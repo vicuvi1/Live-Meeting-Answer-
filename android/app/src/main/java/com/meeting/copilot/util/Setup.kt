@@ -79,13 +79,32 @@ object Setup {
 
     fun openUrl(context: Context, url: String) = start(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)))
 
+    /** Longer text than this doesn't fit in an Android share request; it's sent as a .txt file. */
+    private const val SHARE_TEXT_MAX_CHARS = 50_000
+
     fun share(context: Context, text: String, subject: String) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        val file = if (text.length > SHARE_TEXT_MAX_CHARS) shareFileFor(context, text, subject) else null
+        if (file != null) {
+            send.putExtra(Intent.EXTRA_STREAM, file)
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } else {
+            send.putExtra(Intent.EXTRA_TEXT, text)
         }
         start(context, Intent.createChooser(send, "Trimite"))
+    }
+
+    private fun shareFileFor(context: Context, text: String, subject: String): Uri? = try {
+        val dir = File(context.cacheDir, "shares").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() } // only the latest share is kept
+        val name = subject.replace(Regex("[^\\p{L}\\p{N} _-]"), "").trim().take(60).ifEmpty { "sedinta" }
+        val file = File(dir, "$name.txt").apply { writeText(text) }
+        FileProvider.getUriForFile(context, "${context.packageName}.updates", file)
+    } catch (_: Exception) {
+        null
     }
 
     fun shareFile(context: Context, uri: Uri) {

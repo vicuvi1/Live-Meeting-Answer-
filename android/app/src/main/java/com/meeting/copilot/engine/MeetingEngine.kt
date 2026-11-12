@@ -67,6 +67,8 @@ data class UiState(
     val alertAt: Long = 0,
     val health: String? = null,
     val summaryRunning: Boolean = false,
+    /** She left the meeting screen while a meeting is recorded: ask whether to end it and close the app. */
+    val leftMeeting: Boolean = false,
 )
 
 /**
@@ -103,6 +105,8 @@ class MeetingEngine(
         const val LIVE_QUESTION_SETTLE_MS = 700L
         const val WARM_UP_EVERY_MS = 3 * 60_000L
         const val DIGEST_CONTEXT_MS = 8 * 60_000L
+        /** The meeting screen gone this long (beyond the 5 s "not on screen" margin): ask if she left. */
+        const val LEAVE_PROMPT_MS = 8_000L
         private val SELF_SPEAKERS = setOf("tu", "you", "eu", "dvs", "dumneavoastra", "me")
 
         val APP_NAMES = mapOf(
@@ -164,6 +168,10 @@ class MeetingEngine(
     /** After she ends a meeting by hand, captions still on screen must not start a new one. */
     private var suppressUntilHidden = false
     private var languageWarned = false
+    /** The meeting app was on screen during this session (a test or Live Caption session never asks). */
+    private var sawMeetingInSession = false
+    /** She answered "keep listening": don't ask again until the meeting is back on screen. */
+    private var leavePromptDismissed = false
 
     init {
         main.launch(dbThread) { runCatching { db.closeDanglingMeetings() } }
@@ -187,6 +195,10 @@ class MeetingEngine(
         if (meetingVisible) {
             if (meetingVisibleSince == 0L) meetingVisibleSince = now
             lastMeetingVisibleAt = now
+            if (sessionActive) {
+                sawMeetingInSession = true
+                leavePromptDismissed = false
+            }
             if (app != null && app != "com.google.android.as") meetingApp = APP_NAMES[app] ?: app
         } else {
             meetingVisibleSince = 0L
@@ -392,6 +404,21 @@ class MeetingEngine(
         refreshStatus(now())
     }
 
+    /** "Nu, continui" on the leave prompt: keep recording; ask again only after she returns and leaves. */
+    fun keepListening() {
+        leavePromptDismissed = true
+        _state.update { it.copy(leftMeeting = false) }
+    }
+
+    /**
+     * "Da, ieși și închide": saves the meeting and makes the summary as usual, then switches the
+     * app off so nothing keeps listening (it's turned back on from the app or the quick tile).
+     */
+    fun leaveAndClose() {
+        endMeeting(byUser = true)
+        setActive(false)
+    }
+
     fun endMeeting(byUser: Boolean = true) {
         if (!sessionActive) return
         assembler.reset() // finalizes the last words while the session is still open
@@ -426,13 +453,30 @@ class MeetingEngine(
         return try {
             val lines = transcript ?: withContext(dbThread) { db.lines(meetingId).map { PromptLine(it.ts, it.speaker, it.text) } }
             if (lines.isEmpty()) return "Ședința nu are replici."
-            val json = llm.json(
-                Prompts.summarySystem(prefs.displayName()),
-                Prompts.summaryUser(profile(), lines),
-                maxTokens = 4_000,
-                timeoutMs = 60_000,
-            )
-            val summary = Prompts.parseSummary(json)
+            val name = prefs.displayName()
+            val chunks = Prompts.chunkTranscript(lines)
+            val summary = if (chunks.size == 1) {
+                Prompts.parseSummary(llm.json(Prompts.summarySystem(name), Prompts.summaryUser(profile(), lines), maxTokens = 4_000, timeoutMs = 90_000))
+            } else {
+                // A long meeting: each part on its own (one after another, to stay within free
+                // AI limits), then one summary of the whole meeting from the parts.
+                val parts = chunks.mapIndexed { i, chunk ->
+                    Prompts.parseSummary(
+                        llm.json(
+                            Prompts.summarySystem(name),
+                            Prompts.summaryPartUser(profile(), chunk, i + 1, chunks.size),
+                            maxTokens = 3_000,
+                            timeoutMs = 90_000,
+                        )
+                    )
+                }
+                runCatching {
+                    Prompts.parseSummary(llm.json(Prompts.mergeSystem(name), Prompts.mergeUser(profile(), parts), maxTokens = 4_000, timeoutMs = 90_000))
+                }.getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    Prompts.mergeLocally(parts)
+                }
+            }
             withContext(dbThread) { db.setSummary(meetingId, summary.title, Prompts.summaryToJson(summary)) }
             val tasks = summary.myTasks.size
             alerts.info(
@@ -459,6 +503,8 @@ class MeetingEngine(
         lastDigestAt = now
         noCaptionsWarned = false
         languageWarned = false
+        sawMeetingInSession = _state.value.meetingVisible
+        leavePromptDismissed = false
         languageFixAt = 0L
         pendingMentionAt = 0L
         lastTopicAlert.clear()
@@ -621,6 +667,8 @@ class MeetingEngine(
                 noCaptionsWarned = false
                 _state.update { it.copy(health = null) }
             }
+            val askLeave = sawMeetingInSession && !leavePromptDismissed && now - lastMeetingVisibleAt > LEAVE_PROMPT_MS
+            if (askLeave != _state.value.leftMeeting) _state.update { it.copy(leftMeeting = askLeave) }
             if (now - lastMeetingVisibleAt > END_NOT_VISIBLE_MS || silentFor > END_SILENT_MS) endMeeting(byUser = false)
         } else if (meetingVisibleSince > 0 && now - meetingVisibleSince > CAPTIONS_HINT_MS && !captionsHintShown) {
             captionsHintShown = true

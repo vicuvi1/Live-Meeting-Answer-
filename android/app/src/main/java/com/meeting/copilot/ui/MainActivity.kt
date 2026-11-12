@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.meeting.copilot.App
 import com.meeting.copilot.caption.Overlay
+import com.meeting.copilot.engine.Status
 import com.meeting.copilot.util.Setup
 
 class MainActivity : ComponentActivity() {
@@ -71,6 +73,20 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                 ) { padding ->
+                    // She left Zoom/Meet while the meeting is recorded and the app is open: ask here
+                    // (outside the app the floating card asks the same).
+                    val state by app.engine.state.collectAsState()
+                    if (state.leftMeeting && state.status == Status.LISTENING) {
+                        LeaveDialog(
+                            fromButton = false,
+                            onLeaveAndClose = {
+                                app.engine.leaveAndClose()
+                                finishAndRemoveTask()
+                            },
+                            onEndOnly = { app.engine.endMeeting() },
+                            onStay = { app.engine.keepListening() },
+                        )
+                    }
                     val modifier = Modifier.padding(padding)
                     when (tab) {
                         0 -> HomeScreen(app, resumes, onOpenSettings = { tab = 2 }, modifier = modifier)
