@@ -7,6 +7,7 @@ import com.meeting.copilot.data.Prefs
 import com.meeting.copilot.engine.Alerts
 import com.meeting.copilot.engine.MeetingEngine
 import com.meeting.copilot.util.DiagLog
+import com.meeting.copilot.util.TranscriptBackup
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -36,7 +37,9 @@ class App : Application() {
         db = Db(this)
         llm = LlmClient(prefs)
         alerts = Alerts(this, prefs)
-        engine = MeetingEngine(prefs, db, llm, alerts)
+        engine = MeetingEngine(prefs, db, llm, alerts) { meetingId ->
+            if (prefs.backupToDownloads) TranscriptBackup.save(this, db, meetingId)
+        }
         // Keep the quick-panel on/off button in sync when the switch changes in the app.
         var lastActive = prefs.active
         MainScope().launch {

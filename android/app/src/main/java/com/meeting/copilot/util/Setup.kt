@@ -107,6 +107,22 @@ object Setup {
         null
     }
 
+    /**
+     * Puts the whole text on the clipboard. Returns false when Android refuses it (a very long
+     * transcript can exceed the clipboard's size limit); the caller then offers a file instead.
+     */
+    fun copyText(context: Context, text: String, label: String): Boolean = try {
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+        // Android 13+ shows its own "copied" confirmation.
+        if (Build.VERSION.SDK_INT < 33) {
+            android.widget.Toast.makeText(context, "Conversația a fost copiată", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        true
+    } catch (_: Exception) {
+        false
+    }
+
     fun shareFile(context: Context, uri: Uri) {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"

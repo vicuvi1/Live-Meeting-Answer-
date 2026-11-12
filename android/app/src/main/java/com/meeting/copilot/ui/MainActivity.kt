@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onEndOnly = { app.engine.endMeeting() },
                             onStay = { app.engine.keepListening() },
+                            onDismiss = {}, // a stray tap or Back must not count as an answer
                         )
                     }
                     val modifier = Modifier.padding(padding)

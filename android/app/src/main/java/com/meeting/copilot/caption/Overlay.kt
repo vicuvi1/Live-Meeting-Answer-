@@ -194,7 +194,9 @@ class Overlay(
      * app shows the same question itself when it's open.
      */
     private fun renderLeavePrompt(state: UiState) {
-        val show = state.leftMeeting && state.status == Status.LISTENING && prefs.active && !appVisible.value
+        // Never on the lock screen: "Da, ieși și închide" could be pressed in a pocket.
+        val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+        val show = state.leftMeeting && state.status == Status.LISTENING && prefs.active && !appVisible.value && !locked
         if (!show) {
             removeLeavePrompt()
             return
@@ -204,7 +206,7 @@ class Overlay(
         card.addView(text("Ai ieșit din ședință?", 19f, C.text, bold = true))
         card.addView(
             text(
-                "Vrei să închei înregistrarea și să închizi aplicația? Transcrierea se salvează și primești rezumatul.",
+                "Vrei să închei înregistrarea și să închizi aplicația? Toată conversația se salvează și primești rezumatul. Asistentul se oprește până îl pornești din nou.",
                 15f, C.soft,
             ).top(6)
         )

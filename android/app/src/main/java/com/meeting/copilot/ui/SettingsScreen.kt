@@ -145,6 +145,11 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                 "Ca să nu rămână pornit din greșeală",
                 prefs.autoOff,
             ) { prefs.autoOff = it }
+            PrefSwitch(
+                "Salvează fiecare ședință în Descărcări",
+                "Copie .txt în Descărcări/Asistent Sedinte; rămâne chiar dacă ștergi aplicația",
+                prefs.backupToDownloads,
+            ) { prefs.backupToDownloads = it }
             var tileResult by remember { mutableStateOf<String?>(null) }
             AppButton(
                 "Pune butonul Pornit/Oprit în panoul de sus",

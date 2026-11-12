@@ -153,7 +153,12 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         }
 
         CatchUpCard(state, now)
-        TranscriptCard(state)
+        TranscriptCard(state, onCopyAll = {
+            val text = app.engine.currentTranscript()
+            if (text != null && !Setup.copyText(context, text, "Conversația ședinței")) {
+                Setup.share(context, text, "Conversația ședinței")
+            }
+        })
 
         if (state.status == Status.LISTENING) {
             AppButton(
@@ -173,14 +178,20 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
 
 /** "Do you want to leave the meeting and close the app?" */
 @Composable
-fun LeaveDialog(fromButton: Boolean, onLeaveAndClose: () -> Unit, onEndOnly: () -> Unit, onStay: () -> Unit) {
+fun LeaveDialog(
+    fromButton: Boolean,
+    onLeaveAndClose: () -> Unit,
+    onEndOnly: () -> Unit,
+    onStay: () -> Unit,
+    onDismiss: () -> Unit = onStay,
+) {
     AlertDialog(
-        onDismissRequest = onStay,
+        onDismissRequest = onDismiss,
         containerColor = Palette.SurfaceHigh,
         title = { Text(if (fromButton) "Vrei să ieși din ședință?" else "Ai ieșit din ședință?", color = Palette.Text) },
         text = {
             Text(
-                "Vrei să închei înregistrarea și să închizi aplicația? Transcrierea se salvează și primești rezumatul.",
+                "Vrei să închei înregistrarea și să închizi aplicația? Toată conversația se salvează și primești rezumatul. Asistentul se oprește până îl pornești din nou.",
                 color = Palette.TextSoft,
             )
         },
@@ -312,7 +323,7 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
                         val minutes = state.startedAt?.let { (now - it) / 60_000 } ?: 0
                         val length = if (minutes < 60) "$minutes min" else "${minutes / 60} h ${minutes % 60} min"
                         Text(
-                            "${state.meetingApp ?: "Ședință"} · $length · ${state.lines.size} replici",
+                            "${state.meetingApp ?: "Ședință"} · $length · ${state.lineCount} replici",
                             style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
                         )
                     }
@@ -501,13 +512,17 @@ private fun CatchUpCard(state: UiState, now: Long) {
 }
 
 @Composable
-private fun TranscriptCard(state: UiState) {
+private fun TranscriptCard(state: UiState, onCopyAll: () -> Unit) {
     if (state.lines.isEmpty()) return
     AppCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Eyebrow("Ultimele replici", modifier = Modifier.weight(1f))
-            Text("${state.lines.size}", style = MaterialTheme.typography.labelMedium, color = Palette.Faint)
+            Text("${state.lineCount} în total", style = MaterialTheme.typography.labelMedium, color = Palette.Faint)
         }
+        AppButton(
+            "Copiază toată conversația", onCopyAll,
+            style = ButtonStyle.Tonal, height = 40.dp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
         Spacer(Modifier.height(10.dp))
         state.lines.takeLast(8).forEach { line ->
             val flagged = line.flags != 0
