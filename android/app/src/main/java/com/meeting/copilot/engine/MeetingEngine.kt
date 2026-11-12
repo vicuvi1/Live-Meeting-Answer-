@@ -67,6 +67,10 @@ data class UiState(
     val alertAt: Long = 0,
     val health: String? = null,
     val summaryRunning: Boolean = false,
+    /** She left the meeting screen while a meeting is recorded: ask whether to end it and close the app. */
+    val leftMeeting: Boolean = false,
+    /** All lines of the current meeting ([lines] holds only the newest ones for display). */
+    val lineCount: Int = 0,
 )
 
 /**
@@ -79,6 +83,8 @@ class MeetingEngine(
     private val db: Db,
     private val llm: LlmClient,
     private val alerts: Alerts,
+    /** Runs on the database thread when a meeting is saved (and again after its summary): the file backup. */
+    private val onMeetingSaved: (meetingId: Long) -> Unit = {},
 ) : CaptionAssembler.Listener {
 
     companion object {
@@ -96,13 +102,16 @@ class MeetingEngine(
         const val NO_CAPTIONS_WARNING_MS = 60_000L
         const val CAPTIONS_HINT_MS = 45_000L
         const val END_NOT_VISIBLE_MS = 10 * 60_000L
-        const val END_SILENT_MS = 15 * 60_000L
+        /** No captions this long ends the meeting; long enough that a break doesn't split it in two. */
+        const val END_SILENT_MS = 30 * 60_000L
         const val ANSWER_CONTEXT_MS = 3 * 60_000L
         const val ANSWER_CONTEXT_LINES = 40
         /** A possible question still on screen, unchanged this long, is handled without waiting for a pause. */
         const val LIVE_QUESTION_SETTLE_MS = 700L
         const val WARM_UP_EVERY_MS = 3 * 60_000L
         const val DIGEST_CONTEXT_MS = 8 * 60_000L
+        /** The meeting screen gone this long: ask if she left (long enough not to ask by mistake). */
+        const val LEAVE_PROMPT_MS = 2 * 60_000L
         private val SELF_SPEAKERS = setOf("tu", "you", "eu", "dvs", "dumneavoastra", "me")
 
         val APP_NAMES = mapOf(
@@ -154,6 +163,7 @@ class MeetingEngine(
     private var lastDigestAt = 0L
     private var digestJob: Job? = null
     private var answerJob: Job? = null
+    private var answerJobMode = AnswerMode.SHOW
     private var pendingMentionAt = 0L
     private var lastDirectAt = 0L
     private var lastGroupQuestionAt = 0L
@@ -164,6 +174,10 @@ class MeetingEngine(
     /** After she ends a meeting by hand, captions still on screen must not start a new one. */
     private var suppressUntilHidden = false
     private var languageWarned = false
+    /** The meeting app was on screen during this session (a test or Live Caption session never asks). */
+    private var sawMeetingInSession = false
+    /** She answered "keep listening": don't ask again until the meeting is back on screen. */
+    private var leavePromptDismissed = false
 
     init {
         main.launch(dbThread) { runCatching { db.closeDanglingMeetings() } }
@@ -187,6 +201,10 @@ class MeetingEngine(
         if (meetingVisible) {
             if (meetingVisibleSince == 0L) meetingVisibleSince = now
             lastMeetingVisibleAt = now
+            if (sessionActive) {
+                sawMeetingInSession = true
+                leavePromptDismissed = false
+            }
             if (app != null && app != "com.google.android.as") meetingApp = APP_NAMES[app] ?: app
         } else {
             meetingVisibleSince = 0L
@@ -308,7 +326,10 @@ class MeetingEngine(
         val user = Prompts.answerUser(profile(), catchUp, recent, target.toPrompt())
         // The slide only travels when the question points at it: an image adds upload and reading time.
         val wantsScreen = Detector.aboutScreen(target.text)
+        // A possible question to the room never replaces an answer she asked for and is still waiting on.
+        if (mode == AnswerMode.CONFIRM && answerJob?.isActive == true && answerJobMode == AnswerMode.SHOW) return
         answerJob?.cancel()
+        answerJobMode = mode
         answerJob = main.launch {
             try {
                 val image = if (wantsScreen) {
@@ -392,6 +413,21 @@ class MeetingEngine(
         refreshStatus(now())
     }
 
+    /** "Nu, continui" on the leave prompt: keep recording; ask again only after she returns and leaves. */
+    fun keepListening() {
+        leavePromptDismissed = true
+        _state.update { it.copy(leftMeeting = false) }
+    }
+
+    /**
+     * "Da, ieși și închide": saves the meeting and makes the summary as usual, then switches the
+     * app off so nothing keeps listening (it's turned back on from the app or the quick tile).
+     */
+    fun leaveAndClose() {
+        endMeeting(byUser = true)
+        setActive(false)
+    }
+
     fun endMeeting(byUser: Boolean = true) {
         if (!sessionActive) return
         assembler.reset() // finalizes the last words while the session is still open
@@ -401,6 +437,7 @@ class MeetingEngine(
         answerJob?.cancel()
         val endedAt = now()
         val snapshot = lines.toList()
+        meetingApp = null // the next meeting is named by its own app, never "Test" left over
         lines.clear()
         dbIds.clear()
         _state.value = UiState(meetingVisible = _state.value.meetingVisible, summaryRunning = llm.isConfigured() && snapshot.size >= 3)
@@ -410,7 +447,10 @@ class MeetingEngine(
         main.launch {
             val meetingId = withContext(dbThread) {
                 val id = currentMeetingId
-                if (id != null) runCatching { db.endMeeting(id, endedAt) }
+                if (id != null) {
+                    runCatching { db.endMeeting(id, endedAt) }
+                    runCatching { onMeetingSaved(id) }
+                }
                 currentMeetingId = null
                 id
             } ?: return@launch
@@ -426,14 +466,50 @@ class MeetingEngine(
         return try {
             val lines = transcript ?: withContext(dbThread) { db.lines(meetingId).map { PromptLine(it.ts, it.speaker, it.text) } }
             if (lines.isEmpty()) return "Ședința nu are replici."
-            val json = llm.json(
-                Prompts.summarySystem(prefs.displayName()),
-                Prompts.summaryUser(profile(), lines),
-                maxTokens = 4_000,
-                timeoutMs = 60_000,
-            )
-            val summary = Prompts.parseSummary(json)
-            withContext(dbThread) { db.setSummary(meetingId, summary.title, Prompts.summaryToJson(summary)) }
+            val name = prefs.displayName()
+            val chunks = Prompts.chunkTranscript(lines)
+            val summary = if (chunks.size == 1) {
+                Prompts.parseSummary(llm.json(Prompts.summarySystem(name), Prompts.summaryUser(profile(), lines), maxTokens = 4_000, timeoutMs = 90_000))
+            } else {
+                // A long meeting: each part on its own (one after another, to stay within free
+                // AI limits), then one summary of the whole meeting from the parts.
+                // A part that fails is tried again after a pause (per-minute AI limits); one that
+                // still fails is skipped, so the other parts are never thrown away.
+                var lastError: Exception? = null
+                val parts = chunks.mapIndexedNotNull { i, chunk ->
+                    var result: com.meeting.copilot.ai.Summary? = null
+                    for (attempt in 0 until 2) {
+                        try {
+                            result = Prompts.parseSummary(
+                                llm.json(
+                                    Prompts.summarySystem(name),
+                                    Prompts.summaryPartUser(profile(), chunk, i + 1, chunks.size),
+                                    maxTokens = 3_000,
+                                    timeoutMs = 90_000,
+                                )
+                            )
+                            break
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            lastError = e
+                            if (attempt == 0) delay(20_000)
+                        }
+                    }
+                    result
+                }
+                if (parts.isEmpty()) throw lastError ?: Exception("Eroare AI")
+                runCatching {
+                    Prompts.parseSummary(llm.json(Prompts.mergeSystem(name), Prompts.mergeUser(profile(), parts), maxTokens = 4_000, timeoutMs = 90_000))
+                }.getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    Prompts.mergeLocally(parts)
+                }
+            }
+            withContext(dbThread) {
+                db.setSummary(meetingId, summary.title, Prompts.summaryToJson(summary))
+                runCatching { onMeetingSaved(meetingId) } // the backup file gets the summary too
+            }
             val tasks = summary.myTasks.size
             alerts.info(
                 "Rezumat gata: ${summary.title}",
@@ -459,6 +535,8 @@ class MeetingEngine(
         lastDigestAt = now
         noCaptionsWarned = false
         languageWarned = false
+        sawMeetingInSession = _state.value.meetingVisible
+        leavePromptDismissed = false
         languageFixAt = 0L
         pendingMentionAt = 0L
         lastTopicAlert.clear()
@@ -505,7 +583,7 @@ class MeetingEngine(
 
         val line = Line(nextLocalId++, ts, speaker, text, flags = flags)
         lines.add(line)
-        _state.update { it.copy(lines = lines.takeLast(40)) }
+        _state.update { it.copy(lines = lines.takeLast(40), lineCount = lines.size) }
         if (lines.size % 4 == 0 && now - languageFixAt > 60_000 && Detector.looksEnglish(lines.takeLast(12).map { it.raw })) {
             languageFixAt = now
             _fixLanguage.tryEmit(Unit) // the service switches Meet/Zoom captions to Romanian
@@ -518,9 +596,19 @@ class MeetingEngine(
         }
         if (prefs.diagnostics) DiagLog.log("LINE flags=$flags speaker=$speaker :: $text")
 
+        val sessionStart = startedAt
+        val sessionApp = meetingApp ?: "Ședință"
         main.launch(dbThread) {
-            val meetingId = currentMeetingId ?: return@launch
-            val rowId = runCatching { db.insertLine(meetingId, ts, speaker, text, flags) }.getOrNull() ?: return@launch
+            // Every line must reach the database: if the meeting row couldn't be created at the
+            // start, create it now; a failed write is retried before giving up.
+            val meetingId = currentMeetingId
+                ?: retry { db.newMeeting(sessionStart, sessionApp) }?.also { currentMeetingId = it }
+                ?: return@launch
+            val rowId = retry { db.insertLine(meetingId, ts, speaker, text, flags) }
+            if (rowId == null) {
+                DiagLog.log("LINE NOT SAVED :: $text")
+                return@launch
+            }
             withContext(Dispatchers.Main) { dbIds[line.localId] = rowId }
         }
 
@@ -621,7 +709,12 @@ class MeetingEngine(
                 noCaptionsWarned = false
                 _state.update { it.copy(health = null) }
             }
-            if (now - lastMeetingVisibleAt > END_NOT_VISIBLE_MS || silentFor > END_SILENT_MS) endMeeting(byUser = false)
+            val askLeave = sawMeetingInSession && !leavePromptDismissed && now - lastMeetingVisibleAt > LEAVE_PROMPT_MS
+            if (askLeave != _state.value.leftMeeting) _state.update { it.copy(leftMeeting = askLeave) }
+            // Off screen ends the meeting only if it was seen on screen and she didn't say "Nu, continui"
+            // (a Live Caption call is never "on screen"); silence always does.
+            val offScreenEnd = sawMeetingInSession && !leavePromptDismissed && now - lastMeetingVisibleAt > END_NOT_VISIBLE_MS
+            if (offScreenEnd || silentFor > END_SILENT_MS) endMeeting(byUser = false)
         } else if (meetingVisibleSince > 0 && now - meetingVisibleSince > CAPTIONS_HINT_MS && !captionsHintShown) {
             captionsHintShown = true
             val message = "Ședință deschisă, dar nu văd subtitrări. Apasă CC (subtitrări) în Zoom/Meet și alege limba română."
@@ -669,6 +762,24 @@ class MeetingEngine(
         if (version == detectorVersion) return
         detectorVersion = version
         detector = Detector(prefs.names(), prefs.topicList())
+    }
+
+    /** A database write, tried three times; null when it kept failing (or returned -1). */
+    private fun retry(block: () -> Long): Long? {
+        repeat(3) { attempt ->
+            val id = runCatching(block).getOrNull()
+            if (id != null && id >= 0) return id
+            if (attempt < 2) Thread.sleep(100L * (attempt + 1))
+        }
+        return null
+    }
+
+    /** The whole conversation of the meeting in progress, for "Copiază tot". */
+    fun currentTranscript(): String? {
+        if (lines.isEmpty()) return null
+        val title = "Ședință ${meetingApp ?: ""}".trim()
+        val date = java.text.SimpleDateFormat("d MMMM yyyy · HH:mm", java.util.Locale("ro", "RO")).format(java.util.Date(startedAt))
+        return Prompts.shareText(title, date, null, lines.map { it.toPrompt() })
     }
 
     private fun recordEvent(type: String, payload: String) {

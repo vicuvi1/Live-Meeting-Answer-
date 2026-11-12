@@ -36,6 +36,8 @@ class Prefs(context: Context) {
     /** Switch off by itself when a meeting ends, so it doesn't stay on by mistake. */
     var autoOff by flag("auto_off", false)
     var showBubble by flag("show_bubble", true)
+    /** A .txt copy of every meeting in Downloads/Asistent Sedinte, kept even if the app is removed. */
+    var backupToDownloads by flag("backup_to_downloads", true)
     /** Press the captions button in Zoom/Meet automatically and choose Romanian. */
     var autoCaptions by flag("auto_captions", true)
     /** HyperOS steps Android can't report back; she marks them done after opening them. */

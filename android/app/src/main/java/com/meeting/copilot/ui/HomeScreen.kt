@@ -28,11 +28,13 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.app.Activity
 import com.meeting.copilot.App
 import com.meeting.copilot.caption.CaptionService
 import com.meeting.copilot.caption.Overlay
@@ -84,6 +87,25 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
 
     val showAnswer = state.answer != null && (now - state.answer!!.createdAt < 5 * 60_000 || state.answerLoading)
 
+    // "End the meeting?" before the button ends it. (Leaving Zoom/Meet asks by itself: MainActivity.)
+    var confirmLeave by remember { mutableStateOf(false) }
+    LaunchedEffect(state.status) { if (state.status != Status.LISTENING) confirmLeave = false }
+    if (confirmLeave && state.status == Status.LISTENING && !state.leftMeeting) {
+        LeaveDialog(
+            fromButton = true,
+            onLeaveAndClose = {
+                confirmLeave = false
+                app.engine.leaveAndClose()
+                (context as? Activity)?.finishAndRemoveTask()
+            },
+            onEndOnly = {
+                confirmLeave = false
+                app.engine.endMeeting()
+            },
+            onStay = { confirmLeave = false },
+        )
+    }
+
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -97,7 +119,8 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
             SetupCard(app, resumes, serviceOn, notificationsOk, hasName, hasKey, onOpenSettings)
         }
 
-        update?.let { UpdateCard(it, resumes) }
+        // Installing restarts the app and would stop listening: no update card during a meeting.
+        if (state.status != Status.LISTENING) update?.let { UpdateCard(it, resumes, app) }
 
         if (state.status != Status.LISTENING) SelfCheckCard(app, onOpenSettings)
 
@@ -131,11 +154,16 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         }
 
         CatchUpCard(state, now)
-        TranscriptCard(state)
+        TranscriptCard(state, onCopyAll = {
+            val text = app.engine.currentTranscript()
+            if (text != null && !Setup.copyText(context, text, "Conversația ședinței")) {
+                Setup.share(context, text, "Conversația ședinței")
+            }
+        })
 
         if (state.status == Status.LISTENING) {
             AppButton(
-                "Încheie ședința și fă rezumatul", { app.engine.endMeeting() },
+                "Încheie ședința și fă rezumatul", { confirmLeave = true },
                 style = ButtonStyle.Ghost, modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -147,6 +175,35 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
         }
         Spacer(Modifier.height(20.dp))
     }
+}
+
+/** "Do you want to leave the meeting and close the app?" */
+@Composable
+fun LeaveDialog(
+    fromButton: Boolean,
+    onLeaveAndClose: () -> Unit,
+    onEndOnly: () -> Unit,
+    onStay: () -> Unit,
+    onDismiss: () -> Unit = onStay,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Palette.SurfaceHigh,
+        title = { Text(if (fromButton) "Vrei să ieși din ședință?" else "Ai ieșit din ședință?", color = Palette.Text) },
+        text = {
+            Text(
+                "Vrei să închei înregistrarea și să închizi aplicația? Toată conversația se salvează și primești rezumatul. Asistentul se oprește până îl pornești din nou.",
+                color = Palette.TextSoft,
+            )
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = onLeaveAndClose) { Text("Da, ieși și închide aplicația", color = Palette.Red) }
+                TextButton(onClick = onEndOnly) { Text("Doar încheie ședința", color = Palette.TextSoft) }
+                TextButton(onClick = onStay) { Text("Nu, continui", color = Palette.Green) }
+            }
+        },
+    )
 }
 
 @Composable
@@ -265,8 +322,9 @@ private fun StatusHero(state: UiState, now: Long, onTest: () -> Unit) {
                             style = MaterialTheme.typography.titleLarge, color = Palette.Text,
                         )
                         val minutes = state.startedAt?.let { (now - it) / 60_000 } ?: 0
+                        val length = if (minutes < 60) "$minutes min" else "${minutes / 60} h ${minutes % 60} min"
                         Text(
-                            "${state.meetingApp ?: "Ședință"} · $minutes min · ${state.lines.size} replici",
+                            "${state.meetingApp ?: "Ședință"} · $length · ${state.lineCount} replici",
                             style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
                         )
                     }
@@ -455,13 +513,17 @@ private fun CatchUpCard(state: UiState, now: Long) {
 }
 
 @Composable
-private fun TranscriptCard(state: UiState) {
+private fun TranscriptCard(state: UiState, onCopyAll: () -> Unit) {
     if (state.lines.isEmpty()) return
     AppCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Eyebrow("Ultimele replici", modifier = Modifier.weight(1f))
-            Text("${state.lines.size}", style = MaterialTheme.typography.labelMedium, color = Palette.Faint)
+            Text("${state.lineCount} în total", style = MaterialTheme.typography.labelMedium, color = Palette.Faint)
         }
+        AppButton(
+            "Copiază toată conversația", onCopyAll,
+            style = ButtonStyle.Tonal, height = 40.dp, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
         Spacer(Modifier.height(10.dp))
         state.lines.takeLast(8).forEach { line ->
             val flagged = line.flags != 0

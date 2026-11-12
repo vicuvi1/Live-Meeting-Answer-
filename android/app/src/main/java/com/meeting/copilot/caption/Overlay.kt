@@ -150,6 +150,7 @@ class Overlay(
 
     fun render(state: UiState) {
         lastState = state
+        renderLeavePrompt(state)
         val inMeeting = state.meetingVisible || state.status == Status.LISTENING
         if (!inMeeting && hidden.value) hidden.value = false // meeting over: next one shows the island again
         val show = prefs.active && prefs.showBubble && inMeeting && !hidden.value && !appVisible.value
@@ -180,6 +181,69 @@ class Overlay(
 
     fun destroy() {
         removeIsland()
+        removeLeavePrompt()
+    }
+
+    // ---------------------------------------------------------------- "did you leave?" prompt
+
+    private var leavePrompt: View? = null
+
+    /**
+     * She left Zoom/Meet while the meeting is still recorded: a card at the bottom of the screen
+     * asks whether to end the meeting and close the app. Shown even with the island hidden; the
+     * app shows the same question itself when it's open.
+     */
+    private fun renderLeavePrompt(state: UiState) {
+        // Never on the lock screen: "Da, ieși și închide" could be pressed in a pocket.
+        val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+        val show = state.leftMeeting && state.status == Status.LISTENING && prefs.active && !appVisible.value && !locked
+        if (!show) {
+            removeLeavePrompt()
+            return
+        }
+        if (leavePrompt != null) return
+        val card = card(C.card, C.border).apply { elevation = dp(12).toFloat() }
+        card.addView(text("Ai ieșit din ședință?", 19f, C.text, bold = true))
+        card.addView(
+            text(
+                "Vrei să închei înregistrarea și să închizi aplicația? Toată conversația se salvează și primești rezumatul. Asistentul se oprește până îl pornești din nou.",
+                15f, C.soft,
+            ).top(6)
+        )
+        val buttons = row()
+        buttons.addView(button("Nu, continui", C.green, filled = false) { engine.keepListening() }, weighted().apply { marginEnd = dp(6) })
+        buttons.addView(button("Da, ieși și închide", C.redStrong, filled = true) { engine.leaveAndClose() }, weighted().apply { marginStart = dp(6) })
+        card.addView(buttons.top(14))
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            horizontalMargin = 0f
+            y = dp(48)
+        }
+        val holder = FrameLayout(context).apply {
+            setPadding(dp(12), 0, dp(12), 0)
+            addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        }
+        try {
+            wm.addView(holder, lp)
+            leavePrompt = holder
+            holder.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun removeLeavePrompt() {
+        val view = leavePrompt ?: return
+        leavePrompt = null
+        try {
+            wm.removeView(view)
+        } catch (_: Exception) {
+        }
     }
 
     private fun refresh(state: UiState) {

@@ -145,6 +145,11 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
                 "Ca să nu rămână pornit din greșeală",
                 prefs.autoOff,
             ) { prefs.autoOff = it }
+            PrefSwitch(
+                "Salvează fiecare ședință în Descărcări",
+                "Copie .txt în Descărcări/Asistent Sedinte; rămâne chiar dacă ștergi aplicația",
+                prefs.backupToDownloads,
+            ) { prefs.backupToDownloads = it }
             var tileResult by remember { mutableStateOf<String?>(null) }
             AppButton(
                 "Pune butonul Pornit/Oprit în panoul de sus",
@@ -254,7 +259,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
             status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 8.dp)) }
             update?.let { u ->
                 Spacer(Modifier.height(10.dp))
-                UpdateCard(u, resumes)
+                UpdateCard(u, resumes, app)
             }
         }
         Spacer(Modifier.height(24.dp))

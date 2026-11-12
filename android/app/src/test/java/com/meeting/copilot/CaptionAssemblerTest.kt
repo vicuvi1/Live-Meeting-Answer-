@@ -176,6 +176,81 @@ class CaptionAssemblerTest {
         assertEquals(listOf("Cine poate spune definiția", "la educație"), utterances.map { it.second })
     }
 
+    private fun allWords() = utterances.flatMap { it.second.split(" ") }
+
+    @Test
+    fun revisedFirstWordsAreNotSavedTwice() {
+        // The recognizer merged "bun a" into "Bună": no exact start match, but it is the same sentence.
+        show("bun a")
+        show("bun a ziua")
+        show("bun a ziua tuturor")
+        show("Bună ziua tuturor azi")
+        show("Bună ziua tuturor azi vorbim")
+        pause()
+        assertEquals(listOf("Bună ziua tuturor azi vorbim"), utterances.map { it.second })
+    }
+
+    @Test
+    fun revisedFirstWordWithTypoIsNotSavedTwice() {
+        show("Fună zua tuturor")
+        show("Bună ziua tuturor, începem")
+        pause()
+        assertEquals(listOf("Bună ziua tuturor, începem"), utterances.map { it.second })
+    }
+
+    @Test
+    fun lateRevisionAfterPauseIsNotCommittedAgain() {
+        val words = (1..20).map { "cuvânt$it" }
+        show(words.joinToString(" "))
+        pause()
+        assertEquals(words, allWords())
+        // Word 5 of 20 revised after it was saved, then the speaker continues.
+        val revised = words.toMutableList().also { it[4] = "altceva" }
+        show(revised.joinToString(" "))
+        show((revised + listOf("și", "mai", "departe")).joinToString(" "))
+        pause()
+        assertEquals(words + listOf("și", "mai", "departe"), allWords())
+    }
+
+    @Test
+    fun scrollingPastTheWordWindowKeepsEveryWordOnce() {
+        val words = (1..300).map { "w$it" }
+        val shown = mutableListOf<String>()
+        for (word in words) {
+            shown.add(word)
+            show(shown.joinToString(" ")) // more than MAX_WORDS on screen: the oldest fall out of the window
+        }
+        pause()
+        assertEquals(words, allWords())
+    }
+
+    @Test
+    fun scrollingCaptionWindowKeepsEveryWordOnce() {
+        val words = (1..300).map { "w$it" }
+        for (end in 1..words.size) show(words.subList(maxOf(0, end - 12), end).joinToString(" "))
+        pause()
+        assertEquals(words, allWords())
+    }
+
+    @Test
+    fun newCaptionAfterPauseIsStillCommitted() {
+        show("Avem bugetul aprobat pentru anul viitor")
+        pause()
+        show("Cine se ocupă de livrare")
+        pause()
+        assertEquals(
+            listOf("Avem bugetul aprobat pentru anul viitor", "Cine se ocupă de livrare"),
+            utterances.map { it.second },
+        )
+    }
+
+    @Test
+    fun alignToleratesRevisedFirstWords() {
+        assertEquals(0, align(listOf("bun", "a", "ziua", "tuturor"), listOf("Bună", "ziua", "tuturor", "azi")))
+        assertEquals(0, align(listOf("Bine", "ziua", "tuturor"), listOf("Bună", "ziua", "tuturor", "azi")))
+        assertEquals(-1, align(listOf("Prima", "frază", "aici"), listOf("Complet", "altceva", "acum")))
+    }
+
     @Test
     fun alignHandlesGrowingLastWord() {
         assertEquals(0, align(listOf("Bună", "ziu"), listOf("Bună", "ziua", "tuturor")))

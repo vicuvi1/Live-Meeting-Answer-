@@ -1,6 +1,9 @@
 package com.meeting.copilot.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -154,8 +158,21 @@ private fun MeetingDetail(app: App, meetingId: Long, onBack: () -> Unit, modifie
         }
     }
     val m = meeting ?: return
-    val summary = Prompts.summaryFromJson(m.summary)
+    val summary = remember(m.summary) { Prompts.summaryFromJson(m.summary) }
     val title = summary?.title ?: m.title ?: "Ședință ${m.app}"
+    // The whole conversation as text (summary on top), built off the main thread: hours of talk.
+    suspend fun fullText(): String = withContext(Dispatchers.Default) {
+        Prompts.shareText(title, dateFormat.format(Date(m.startedAt)), summary, lines.map { it.toPrompt() })
+    }
+    val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) scope.launch {
+            val text = fullText()
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray()) } != null }.getOrDefault(false)
+            }
+            Toast.makeText(context, if (ok) "Conversația a fost salvată" else "Salvarea a eșuat", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     LazyColumn(modifier.fillMaxSize().padding(ScreenPadding), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -176,7 +193,7 @@ private fun MeetingDetail(app: App, meetingId: Long, onBack: () -> Unit, modifie
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AppButton(
                     "Trimite",
-                    { Setup.share(context, Prompts.shareText(title, dateFormat.format(Date(m.startedAt)), summary, lines.map { it.toPrompt() }), title) },
+                    { scope.launch { Setup.share(context, fullText(), title) } },
                     icon = Icons.Filled.Share, modifier = Modifier.weight(1f),
                 )
                 AppButton(
@@ -192,6 +209,26 @@ private fun MeetingDetail(app: App, meetingId: Long, onBack: () -> Unit, modifie
                     },
                     style = ButtonStyle.Tonal, tone = Tone.Info, icon = Icons.Filled.Refresh,
                     enabled = !busy && app.llm.isConfigured() && lines.isNotEmpty(), modifier = Modifier.weight(1f),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
+                AppButton(
+                    "Copiază tot",
+                    {
+                        scope.launch {
+                            val text = fullText()
+                            if (!Setup.copyText(context, text, title)) {
+                                Toast.makeText(context, "Prea lungă pentru copiere; o trimit ca fișier.", Toast.LENGTH_LONG).show()
+                                Setup.share(context, text, title)
+                            }
+                        }
+                    },
+                    style = ButtonStyle.Tonal, icon = Icons.Filled.Done, enabled = lines.isNotEmpty(), modifier = Modifier.weight(1f),
+                )
+                AppButton(
+                    "Salvează fișier",
+                    { saveFile.launch("${title.replace(Regex("[\\\\/:*?\"<>|]"), "").take(60)}.txt") },
+                    style = ButtonStyle.Tonal, icon = Icons.Filled.Done, enabled = lines.isNotEmpty(), modifier = Modifier.weight(1f),
                 )
             }
             message?.let { Text(it, color = Palette.Red, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }

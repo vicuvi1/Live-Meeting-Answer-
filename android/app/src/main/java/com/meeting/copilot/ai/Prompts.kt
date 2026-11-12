@@ -150,10 +150,57 @@ Răspunde DOAR cu JSON, exact în forma:
 {"title":"titlu scurt, max 6 cuvinte","summary":["3–6 puncte principale"],"decisions":["decizii luate"],"my_tasks":[{"task":"ce trebuie să facă $name","from":"cine a cerut","deadline":"termen sau șir gol"}],"my_promises":["ce a spus $name că va face"]}
 """.trim()
 
-    fun summaryUser(profile: Profile, lines: List<PromptLine>, maxChars: Int = 120_000): String {
-        val transcript = lines.joinToString("\n") { format(it) }.takeLast(maxChars)
-        return profileBlock(profile) + "\nTranscrierea ședinței:\n" + transcript
+    /**
+     * How much transcript goes into one AI request. About an hour of talk; longer meetings are
+     * summarized part by part and the parts merged, so no part of the meeting is ever cut off.
+     */
+    const val SUMMARY_CHUNK_CHARS = 60_000
+
+    fun summaryUser(profile: Profile, lines: List<PromptLine>): String =
+        profileBlock(profile) + "\nTranscrierea ședinței:\n" + lines.joinToString("\n") { format(it) }
+
+    /** Splits a transcript into consecutive parts of at most [maxChars] characters each (whole lines). */
+    fun chunkTranscript(lines: List<PromptLine>, maxChars: Int = SUMMARY_CHUNK_CHARS): List<List<PromptLine>> {
+        val chunks = mutableListOf<List<PromptLine>>()
+        var current = mutableListOf<PromptLine>()
+        var size = 0
+        for (line in lines) {
+            val length = format(line).length + 1
+            if (current.isNotEmpty() && size + length > maxChars) {
+                chunks.add(current)
+                current = mutableListOf()
+                size = 0
+            }
+            current.add(line)
+            size += length
+        }
+        if (current.isNotEmpty()) chunks.add(current)
+        return chunks
     }
+
+    fun summaryPartUser(profile: Profile, lines: List<PromptLine>, part: Int, total: Int): String =
+        profileBlock(profile) + "\nAceasta este partea $part din $total a unei ședințe lungi. " +
+            "Rezumă doar această parte.\nTranscrierea părții:\n" + lines.joinToString("\n") { format(it) }
+
+    fun mergeSystem(name: String) = """
+Primești rezumatele, în ordine, ale tuturor părților unei ședințe lungi a utilizatoarei $name. Unește-le într-un singur rezumat al întregii ședințe: păstrează tot ce e important din fiecare parte, elimină repetițiile, păstrează toate sarcinile și promisiunile lui $name.
+Răspunde DOAR cu JSON, exact în forma:
+{"title":"titlu scurt, max 6 cuvinte","summary":["4–8 puncte principale din toată ședința"],"decisions":["decizii luate"],"my_tasks":[{"task":"ce trebuie să facă $name","from":"cine a cerut","deadline":"termen sau șir gol"}],"my_promises":["ce a spus $name că va face"]}
+""".trim()
+
+    fun mergeUser(profile: Profile, parts: List<Summary>): String = buildString {
+        append(profileBlock(profile))
+        parts.forEachIndexed { i, s -> append("\nPartea ${i + 1}: ").append(summaryToJson(s)).append('\n') }
+    }
+
+    /** Used when the AI can't merge the parts: everything from every part, without duplicates. */
+    fun mergeLocally(parts: List<Summary>): Summary = Summary(
+        title = parts.firstOrNull()?.title ?: "Ședință",
+        points = parts.flatMap { it.points }.distinct(),
+        decisions = parts.flatMap { it.decisions }.distinct(),
+        myTasks = parts.flatMap { it.myTasks }.distinctBy { it.task },
+        myPromises = parts.flatMap { it.myPromises }.distinct(),
+    )
 
     fun parseSummary(json: JSONObject): Summary {
         val tasks = mutableListOf<Task>()
