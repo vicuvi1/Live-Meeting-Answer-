@@ -195,7 +195,7 @@ object SelfCheck {
         return if (update == null) {
             Check("Ultima versiune", Result.OK, "Aplicația e la zi.")
         } else {
-            Check("Există o versiune nouă: ${update.name}", Result.WARN, "Apasă „Actualizează acum” mai sus, în afara unui apel.")
+            Check("Există o versiune nouă: ${update.name}", Result.WARN, "Apasă „Actualizează acum” mai sus, în afara unui apel sau a unei ședințe.")
         }
     }
 

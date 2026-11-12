@@ -119,7 +119,8 @@ fun HomeScreen(app: App, resumes: Int, onOpenSettings: () -> Unit, modifier: Mod
             SetupCard(app, resumes, serviceOn, notificationsOk, hasName, hasKey, onOpenSettings)
         }
 
-        update?.let { UpdateCard(it, resumes) }
+        // Installing restarts the app and would stop listening: no update card during a meeting.
+        if (state.status != Status.LISTENING) update?.let { UpdateCard(it, resumes, app) }
 
         if (state.status != Status.LISTENING) SelfCheckCard(app, onOpenSettings)
 

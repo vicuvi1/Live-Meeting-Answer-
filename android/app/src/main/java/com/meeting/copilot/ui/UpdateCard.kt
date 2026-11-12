@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.media.AudioManager
+import com.meeting.copilot.App
+import com.meeting.copilot.engine.Status
 import com.meeting.copilot.util.UpdateChecker
 import kotlinx.coroutines.launch
 import java.io.File
@@ -32,17 +35,23 @@ import java.io.File
  * One-tap update: downloads the new version inside the app, then opens Android's
  * "Update this app?" screen. The first time, Android asks to allow installs from this app;
  * when she comes back from that screen the install continues by itself.
+ * Never installs during a meeting: installing restarts the app and listening would stop.
+ * A download already running may finish, but the installer waits for her tap after the meeting.
  */
 @Composable
-fun UpdateCard(update: UpdateChecker.Update, resumes: Int) {
+fun UpdateCard(update: UpdateChecker.Update, resumes: Int, app: App) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var progress by remember { mutableStateOf<Int?>(null) }
     var file by remember { mutableStateOf<File?>(null) }
     var needsPermission by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val meetingState by app.engine.state.collectAsState()
+    val inMeeting = meetingState.status == Status.LISTENING
 
     fun installNow(apk: File) {
+        // Read the live state: a meeting may have started while the download was running.
+        if (app.engine.state.value.status == Status.LISTENING) return
         // Android 16 blocks installing during a call ("Nu se poate finaliza acțiunea în timpul apelului").
         val audio = context.getSystemService(AudioManager::class.java)
         if (audio != null && (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION)) {
@@ -60,7 +69,7 @@ fun UpdateCard(update: UpdateChecker.Update, resumes: Int) {
     // Back from "Install unknown apps": continue without another tap.
     LaunchedEffect(resumes) {
         val apk = file
-        if (needsPermission && apk != null && UpdateChecker.canInstall(context)) {
+        if (needsPermission && apk != null && !inMeeting && UpdateChecker.canInstall(context)) {
             needsPermission = false
             UpdateChecker.install(context, apk)
         }
@@ -76,6 +85,7 @@ fun UpdateCard(update: UpdateChecker.Update, resumes: Int) {
         Text(
             when {
                 downloading -> "Se descarcă… ${progress}%"
+                inMeeting -> "Actualizarea se poate instala după ședință."
                 needsPermission -> "Pornește „Permite din această sursă”, apoi revino: instalarea continuă singură."
                 file != null -> "Descărcată. Apasă Actualizează în fereastra Android."
                 else -> "Un singur apăsat: se descarcă și se instalează. Setările și istoricul rămân."
@@ -117,7 +127,7 @@ fun UpdateCard(update: UpdateChecker.Update, resumes: Int) {
                 }
             },
             tone = Tone.Info,
-            enabled = !downloading,
+            enabled = !downloading && !inMeeting,
             modifier = Modifier.fillMaxWidth(),
         )
     }

@@ -259,7 +259,7 @@ fun SettingsScreen(app: App, resumes: Int, modifier: Modifier = Modifier) {
             status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, modifier = Modifier.padding(top = 8.dp)) }
             update?.let { u ->
                 Spacer(Modifier.height(10.dp))
-                UpdateCard(u, resumes)
+                UpdateCard(u, resumes, app)
             }
         }
         Spacer(Modifier.height(24.dp))
