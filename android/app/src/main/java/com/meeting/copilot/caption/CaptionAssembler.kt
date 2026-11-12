@@ -182,11 +182,23 @@ class CaptionAssembler(
         // Words finalized above were said by the previous speaker; switch only now.
         if (speakerChanged) flushPending()
         if (newSpeaker != null) speaker = newSpeaker
-        // Already-final words stay final only while they are still on screen unchanged; after fixed
-        // text (a title, a name) a new sentence replaces the old one, and its words are new.
-        committedInTail = minOf(committedInTail, sameLeading(stillVisible, words))
+        committedInTail = stillCommitted(stillVisible, words)
         tail = words
         emitLive()
+    }
+
+    /**
+     * How many of the new words are already final. Final words stay final while the caption
+     * continues, even if the recognizer later revises one of them: saving a late fix would mean
+     * saving the rest of the sentence a second time, and a tiny loss beats a duplicate. Only when
+     * most final words are gone is it a new sentence (after fixed text such as a title or a name,
+     * the new sentence replaces the old one), and then only the unchanged leading words stay final.
+     */
+    private fun stillCommitted(stillVisible: List<String>, words: List<String>): Int {
+        if (committedInTail == 0) return 0
+        val walk = walk(stillVisible.map(TextNorm::key), words.map(TextNorm::key), 0, committedInTail)
+        if (walk.matches * 10 >= committedInTail * 6) return walk.newEnd
+        return minOf(committedInTail, sameLeading(stillVisible, words))
     }
 
     private fun sameLeading(before: List<String>, after: List<String>): Int {
@@ -254,5 +266,67 @@ internal fun align(previous: List<String>, current: List<String>): Int {
             bestOffset = offset
         }
     }
+    if (bestOffset >= 0) return bestOffset
+
+    // No exact match: the recognizer may have revised the first words ("bun a ziua" -> "Bună ziua",
+    // "zua" -> "ziua"). Compare again word by word with tolerance, and take the overlap where most
+    // words still match, so the revised sentence replaces the old one instead of being saved twice.
+    for (offset in old.indices) {
+        val overlap = minOf(old.size - offset, new.size)
+        val matches = walk(old, new, offset, old.size).matches
+        if (matches < minOf(2, overlap) || matches * 10 < overlap * 6) continue
+        if (matches > bestMatches) {
+            bestMatches = matches
+            bestOffset = offset
+        }
+    }
     return bestOffset
+}
+
+/** Result of [walk]: how many old words matched, and where in the new words the walk stopped. */
+internal class Walk(val matches: Int, val newEnd: Int)
+
+/**
+ * Walks old keys `old[from until to]` alongside new keys from the start, tolerating revised,
+ * merged, split, dropped and inserted words. Counts the old words that found a match.
+ */
+internal fun walk(old: List<String>, new: List<String>, from: Int, to: Int): Walk {
+    var i = from
+    var j = 0
+    var matches = 0
+    while (i < to && j < new.size) {
+        val a = old[i]
+        val b = new[j]
+        when {
+            // Two words merged: "bun a" -> "buna".
+            i + 1 < to && a + old[i + 1] == b -> { matches += 2; i += 2; j++ }
+            // One word split: "deacord" -> "de acord".
+            j + 1 < new.size && a == b + new[j + 1] -> { matches++; i++; j += 2 }
+            similarWord(a, b, growing = i == old.size - 1) -> { matches++; i++; j++ }
+            // An old word was dropped, or a new one inserted.
+            i + 1 < to && similarWord(old[i + 1], b, growing = false) -> i++
+            j + 1 < new.size && similarWord(a, new[j + 1], growing = false) -> j++
+            // A word replaced by an unrelated one.
+            else -> { i++; j++ }
+        }
+    }
+    // Old words left over when the new text ended early correspond to nothing new.
+    return Walk(matches, j)
+}
+
+/** Same word, give or take a recognizer revision: "zua" ~ "ziua", "bun" ~ "buna", "sedinta" ~ "sedintei". */
+private fun similarWord(a: String, b: String, growing: Boolean): Boolean {
+    if (a == b) return true
+    if (a.isEmpty() || b.isEmpty()) return false
+    if (growing && b.startsWith(a)) return true
+    val shorter = if (a.length <= b.length) a else b
+    val longer = if (a.length <= b.length) b else a
+    if (shorter.length >= 3 && longer.startsWith(shorter)) return true
+    // Short words differ by one letter at most, longer ones by two ("este" and "asta" are different words).
+    val allowed = when {
+        longer.length >= 6 -> 2
+        longer.length >= 4 -> 1
+        else -> 0
+    }
+    return allowed > 0 && TextNorm.levenshtein(a, b) <= allowed
 }
