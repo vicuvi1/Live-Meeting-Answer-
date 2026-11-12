@@ -59,6 +59,13 @@ class CaptionService : AccessibilityService() {
         private const val POLL_MS = 1_500L
         private const val STATIC_LINE_MS = 6_000L
         private const val MAX_NODES = 4_000
+        /** Once the captions are found, the whole screen is read at most this often; in between only the captions. */
+        private const val FULL_SCAN_EVERY_MS = 1_000L
+        private const val FAST_SCAN_MAX_NODES = 800
+        /** How far above the caption lines the shared container may be (beyond it: always full scans). */
+        private const val CONTAINER_MAX_UP = 6
+        /** The caption region rarely has more lines than this; more means it's not a tidy caption box. */
+        private const val CONTAINER_MAX_LINES = 12
         private const val MAX_DEPTH = 60
         /** Enough to read slide text, small enough to upload in a moment. */
         private const val SCREENSHOT_MAX_SIDE = 1280f
@@ -109,10 +116,19 @@ class CaptionService : AccessibilityService() {
     private val diagLastText = HashMap<String, String>()
     private var meetingWindowId = -1
 
+    /**
+     * The screen element holding the locked captions (the closest parent of all its lines). Between
+     * full scans only this part of the screen is read: a few dozen elements instead of thousands,
+     * which saves a lot of battery over a meeting of several hours.
+     */
+    private class CaptionContainer(val node: AccessibilityNodeInfo, val depth: Int, val pkg: String, val key: String)
+    private var container: CaptionContainer? = null
+    private var lastFullScanAt = 0L
+
     private val poll = object : Runnable {
         override fun run() {
             val state = app.engine.state.value
-            if (app.prefs.active && (state.meetingVisible || state.status == Status.LISTENING)) safeScan()
+            if (app.prefs.active && (state.meetingVisible || state.status == Status.LISTENING)) safeScan(preferFast = false)
             handler.postDelayed(this, POLL_MS)
         }
     }
@@ -185,7 +201,7 @@ class CaptionService : AccessibilityService() {
         scanPending = true
         handler.postDelayed({
             scanPending = false
-            safeScan()
+            safeScan(preferFast = true)
         }, SCAN_DELAY_MS)
     }
 
@@ -219,12 +235,80 @@ class CaptionService : AccessibilityService() {
         activeMode = active
     }
 
-    private fun safeScan() {
+    /**
+     * [preferFast]: a screen change; read only the captions when they're locked and the last full
+     * scan is recent. Otherwise (or when the quick read fails) the whole screen is read.
+     */
+    private fun safeScan(preferFast: Boolean) {
         try {
+            val recentFull = System.currentTimeMillis() - lastFullScanAt < FULL_SCAN_EVERY_MS
+            if (preferFast && recentFull && fastScan()) return
             scan()
         } catch (e: Exception) {
+            container = null
             DiagLog.log("SCAN ERROR ${e.stackTraceToString()}")
         }
+    }
+
+    /** Reads just the caption container. False when it's gone or changed: a full scan is needed. */
+    private fun fastScan(): Boolean {
+        val c = container ?: return false
+        val assembler = app.engine.assembler
+        if (assembler.activeKey != c.key || (app.prefs.diagnostics && app.prefs.diagnosticsAllApps)) {
+            container = null
+            return false
+        }
+        if (!c.node.refresh() || !c.node.isVisibleToUser) {
+            container = null
+            return false
+        }
+        val builders = LinkedHashMap<String, RegionBuilder>()
+        val budget = intArrayOf(FAST_SCAN_MAX_NODES)
+        collect(c.node, c.pkg, builders, c.depth, budget, null)
+        val builder = builders[c.key]
+        if (builder == null || budget[0] <= 0) { // a cut-short read could miss caption lines
+            container = null // the captions moved or the layout changed
+            return false
+        }
+        val region = builder.build(lineFirstSeen.getOrPut(c.key) { HashMap() }, System.currentTimeMillis())
+        if (app.prefs.diagnostics) logRegions(listOf(region))
+        assembler.observe(listOf(region))
+        return true
+    }
+
+    /**
+     * The closest common parent of all the caption lines (at most [CONTAINER_MAX_UP] levels up),
+     * so a quick read sees exactly the same lines as a full scan. Null: no quick reads.
+     */
+    private fun findContainer(lines: List<Pair<AccessibilityNodeInfo, Int>>, pkg: String, key: String): CaptionContainer? {
+        if (lines.isEmpty() || lines.size > CONTAINER_MAX_LINES) return null
+        val (first, firstDepth) = lines[0]
+        // The first line's parents, nearest first.
+        val chain = mutableListOf<AccessibilityNodeInfo>()
+        var node = first.parent
+        while (node != null && chain.size < CONTAINER_MAX_UP) {
+            chain.add(node)
+            node = node.parent
+        }
+        var needed = 0 // index in chain of the lowest parent shared by every line
+        for ((other, _) in lines.drop(1)) {
+            var up = other.parent
+            var found = -1
+            var steps = 0
+            while (up != null && steps < CONTAINER_MAX_UP) {
+                val index = chain.indexOf(up)
+                if (index >= 0) {
+                    found = index
+                    break
+                }
+                up = up.parent
+                steps++
+            }
+            if (found < 0) return null
+            needed = maxOf(needed, found)
+        }
+        if (needed >= chain.size) return null
+        return CaptionContainer(chain[needed], firstDepth - 1 - needed, pkg, key)
     }
 
     private fun scan() {
@@ -241,6 +325,9 @@ class CaptionService : AccessibilityService() {
         val meetingRoots = mutableListOf<AccessibilityNodeInfo>()
         val now = System.currentTimeMillis()
         val assembler = app.engine.assembler
+        lastFullScanAt = now
+        val activeKeyBefore = assembler.activeKey
+        val activeLines = if (activeKeyBefore != null && !allApps) mutableListOf<Pair<AccessibilityNodeInfo, Int>>() else null
 
         for (window in allWindows) {
             if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD ||
@@ -260,10 +347,15 @@ class CaptionService : AccessibilityService() {
                 meetingRoots.add(root)
             }
             // Gmail's inbox is never read; Meet/Zoom screens are, so captions keep a call alive.
-            if (inCall || (isMeetingApp && pkg != GMAIL) || allApps) collect(root, pkg, builders, 0, budget)
+            if (inCall || (isMeetingApp && pkg != GMAIL) || allApps) collect(root, pkg, builders, 0, budget, activeLines)
         }
 
         val regions = builders.values.map { it.build(lineFirstSeen.getOrPut(it.key) { HashMap() }, now) }
+        // Where the captions live, for the quick reads until the next full scan. Not used while the
+        // node budget ran out (the caption lines may be incomplete).
+        container = if (activeKeyBefore != null && activeLines != null && budget[0] > 0 && assembler.activeKey == activeKeyBefore) {
+            findContainer(activeLines, activeKeyBefore.substringBefore('|'), activeKeyBefore)
+        } else null
         if (lineFirstSeen.size > 300) lineFirstSeen.keys.retainAll(builders.keys)
         if (diagnostics) logRegions(regions)
         app.engine.onScan(meetingPackage != null, meetingPackage)
@@ -303,6 +395,7 @@ class CaptionService : AccessibilityService() {
         builders: MutableMap<String, RegionBuilder>,
         depth: Int,
         budget: IntArray,
+        activeLines: MutableList<Pair<AccessibilityNodeInfo, Int>>?,
     ) {
         if (depth > MAX_DEPTH || budget[0]-- <= 0) return
         if (!node.isVisibleToUser) return
@@ -315,13 +408,14 @@ class CaptionService : AccessibilityService() {
                 (viewId != null && CAPTION_ID_HINTS.any { viewId.lowercase().contains(it) })
             val builder = builders.getOrPut(key) { RegionBuilder(key, explicit) }
             builder.add(text)
+            if (activeLines != null && key == app.engine.assembler.activeKey) activeLines.add(node to depth)
             if (builder.speaker == null && (explicit || key == app.engine.assembler.activeKey)) {
                 builder.speaker = findSpeaker(node, text)
             }
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            collect(child, pkg, builders, depth + 1, budget)
+            collect(child, pkg, builders, depth + 1, budget, activeLines)
         }
     }
 
